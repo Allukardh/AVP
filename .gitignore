@@ -23,3 +23,14 @@ avp/*
 !avp/www/
 avp/www/*
 !avp/www/avp.asp
+*.new
+*.patch
+*.rej
+*.orig
+*.swp
+.*.swp
+.DS_Store
+Thumbs.db
+nohup.out
+core
+core.*
