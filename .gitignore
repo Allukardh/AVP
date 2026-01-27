@@ -1,0 +1,25 @@
+# AVP runtime (nao versionar)
+avp/logs/
+avp/state/
+avp/cache/
+
+# Backups runtime
+backups/
+# temporarios
+*.bak
+*.tmp
+*~
+# Legado runtime (nao versionar)
+logs/
+# AVP runtime policy (local environment)
+autovpn/
+#VP local backups (gerados durante debug/patch)
+*.bak.*
+*.bak_*
+*.bak_pre_*
+# AVP WebUI (canonical file tracked; rest runtime)
+avp/*
+!avp/
+!avp/www/
+avp/www/*
+!avp/www/avp.asp

@@ -1,0 +1,97 @@
+#!/bin/sh
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-POL-CRON
+# File      : avp-pol-cron.sh
+# Role      : Cron wrapper (timestamp + rc) for AVP-POL run
+# Version   : v1.0.12 (2026-01-26)
+# Status    : stable
+# =============================================================
+#
+# CHANGELOG
+# - v1.0.12 (2026-01-26)
+#   * VERSION: bump patch (pos harden canônico)
+# - v1.0.11 (2026-01-26)
+#   * HARDEN: export PATH robusto p/ cron (evita "funciona no SSH, falha no cron")
+# - v1.0.10 (2026-01-18)
+#   * POLISH: padroniza SCRIPT_VER + set -u (ordem oficial) e remove linhas em branco desnecessarias
+# - v1.0.9 (2026-01-10)
+#   * ADD: erro estruturado no avp_errors.log quando rc!=0 (cron)
+# - v1.0.8 (2026-01-08)
+#   * CHG: Flash-Safe v1: erro de execucao logado em /jffs/scripts/logs/avp_errors.log
+# - v1.0.7 (2026-01-08)
+#   * CHG: LOGDIR padrão agora /tmp/avp_logs (opt AVP_LOGDIR) para evitar escrita no jffs
+# - v1.0.6 (2026-01-07)
+#   * SAFETY: rotate_if_big (evita crescimento infinito do log do cron)
+#   * SAFETY: mkdir -p logs + fallback /tmp quando /jffs indisponível
+# - v1.0.5 (2026-01-05)
+#   * CHORE: padroniza header + changelog (C1.5)
+# - v1.0.4 (2025-12-29)
+#   * ADD: START agora inclui pid=$$ (distingue instancias em execucao manual/cron)
+# - v1.0.3 (2025-12-29)
+#   * ADD: se rc!=0, anexa dump (status + head do ultimo log do ENG) no log do cron
+# - v1.0.2 (2025-12-29)
+#   * FIX: alinhado ao POL v1.2.4+ (usa comando run; alias antigo removido do POL)
+#   * CHG: cron continua silencioso; detalhes ficam em /tmp/avp_logs/avp-pol-cron.log (opt AVP_LOGDIR) e no ENG (opt AVP_LOGDIR)
+# - v1.0.1 (2025-12-26)
+#   * CHG: wrapper adotado como método oficial do cron (START/END + rc em log dedicado)
+# - v1.0.0 (2025-12-26)
+#   * ADD: timestamped START/END + rc in dedicated log file
+#   * SAFETY: keep cron quoting simple (wrapper script)
+# =============================================================
+
+SCRIPT_VER="v1.0.12"
+export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+hash -r 2>/dev/null || true
+set -u
+
+emit_error(){
+  ts="$(date +%s)"
+  rc="$1"
+  msg="$2"
+  echo "{\"ts\":\"$ts\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$msg\",\"rc\":$rc}" >> /jffs/scripts/logs/avp_errors.log
+}
+
+AVP_LIB="/jffs/scripts/avp-lib.sh"
+[ -f "$AVP_LIB" ] && . "$AVP_LIB"
+type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
+has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
+
+ts(){ date "+%F %T"; }
+ROTATE_MAX=262144  # 256 KiB
+
+rotate_if_big() {
+  _f="$1"
+  [ -f "$_f" ] || return 0
+  _sz="$(wc -c <"$_f" 2>/dev/null || echo 0)"
+  [ "$_sz" -ge "$ROTATE_MAX" ] || return 0
+  mv -f "$_f" "${_f}.1" 2>/dev/null || true
+}
+
+# logdir: padrão em RAM para evitar escrita persistente no jffs (override: AVP_LOGDIR)
+LOGDIR="${AVP_LOGDIR:-/tmp/avp_logs}"
+mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2>/dev/null || :; }
+mkdir -p "$LOGDIR" 2>/dev/null || :
+LOG="$LOGDIR/avp-pol-cron.log"
+rotate_if_big "$LOG"
+echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER START" >>"$LOG"
+/bin/sh /jffs/scripts/avp-pol.sh run >>"$LOG" 2>&1
+rc=$?
+echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER END rc=$rc" >>"$LOG"
+if [ "$rc" -ne 0 ]; then
+  if has_fn log_error; then
+    log_error "CRON" "avp-pol.sh failed" "$rc" "log=$LOG"
+  fi
+
+  {
+    echo "$(ts) [CRON] failure_dump BEGIN rc=$rc"
+    /bin/sh /jffs/scripts/avp-pol.sh status
+    echo "---- LAST LOG (head 80) ----"
+    /bin/sh /jffs/scripts/avp-pol.sh run --show-last | head -n 80
+    echo "$(ts) [CRON] failure_dump END rc=$rc"
+  } >>"$LOG" 2>&1
+fi
+if [ "$rc" -ne 0 ]; then
+  emit_error "$rc" "policy_apply_failed"
+fi
+exit "$rc"
