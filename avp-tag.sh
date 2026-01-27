@@ -1,11 +1,27 @@
 #!/bin/sh
+# =============================================================
+# Component : AVP-TOOLS
+# File      : avp-tag.sh
+# Role      : Git tag helper (rel/* stable, ck/* checkpoints)
+# Version   : v1.0.0 (2026-01-27)
+# Status    : stable
+# -------------------------------------------------------------
+#
+# CHANGELOG:
+# - v1.0.0 (2026-01-27) - initial (tag convention enforcement)
+# =============================================================
+
+SCRIPT_VER="v1.0.0"
+export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+hash -r 2>/dev/null || true
+set -u
+
 # avp-tag.sh — Tagger oficial do repo AVP
 #
 # Uso:
 #   ./avp-tag.sh rel v1.0.0 "Release v1.0.0 — baseline sólido (a partir daqui, rel/* = estável)" [ref]
 #   ./avp-tag.sh ck  slug_YYYYMMDD "checkpoint ..." [ref]
 #
-set -eu
 
 kind="${1:-}"
 name="${2:-}"
