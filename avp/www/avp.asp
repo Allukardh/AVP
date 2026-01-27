@@ -5,7 +5,7 @@ AutoVPN Platform (AVP)
 Component : AVP-WEBUI (ASP)
 File      : avp.asp
 Role      : WebUI frontend (router user page)
-Version   : v1.0.10 (2026-01-08)
+Version   : v1.0.11 (2026-01-27)
 Status    : stable
 =============================================================
 
@@ -126,7 +126,7 @@ CHANGELOG
   const $ = (id)=>document.getElementById(id);
   let timer = null;
 
-  const WEBUI_VER = "v1.0.10";
+  const WEBUI_VER = "v1.0.11";
   if ($("ver")) $("ver").textContent = "WebUI " + WEBUI_VER;
 
 
@@ -307,7 +307,7 @@ CHANGELOG
     if (navigator.clipboard && navigator.clipboard.writeText){
       return navigator.clipboard.writeText(text);
     }
-    // fallback velho
+    // fallback legacy (document.execCommand)
     const ta = document.createElement("textarea");
     ta.value = text;
     document.body.appendChild(ta);
@@ -328,7 +328,7 @@ CHANGELOG
         await copyToClipboard(txt);
         toast("Copied fresh JSON");
       } catch(e){
-        // fallback: tenta copiar o último JSON em memória
+        // fallback: copy lastRawJson (in-memory)
         try { await copyToClipboard(lastRawJson || ""); } catch(_) {}
         toast("Copy failed");
       }
