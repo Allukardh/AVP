@@ -4,11 +4,13 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.12 (2026-01-26)
+# Version   : v1.0.13 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.13 (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.0.12 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
 # - v1.0.11 (2026-01-26)
@@ -40,7 +42,7 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.12"
+SCRIPT_VER="v1.0.13"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
