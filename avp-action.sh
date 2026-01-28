@@ -4,11 +4,13 @@
 # Component : AVP-ACTION
 # File      : avp-action.sh
 # Role      : Local action handler (whitelist + token + JSON)
-# Version   : v1.0.19 (2026-01-27)
+# Version   : v1.0.20 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.20 (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.0.19 (2026-01-27)
 #   * CHORE: hygiene (whitespace/blank lines; no logic change)
 # - v1.0.18 (2026-01-27)
@@ -58,7 +60,7 @@
 #   * ADD: C2.2 local action handler (whitelist + token + JSON)
 # =============================================================
 
-SCRIPT_VER="v1.0.19"
+SCRIPT_VER="v1.0.20"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
