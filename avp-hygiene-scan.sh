@@ -5,14 +5,16 @@
 # File      : avp-hygiene-scan.sh
 # Role      : Scan scripts for hygiene candidates (NO changes)
 # Status    : stable
-# Version   : v1.0.0 (2026-01-27)
+# Version   : v1.0.1 (2026-01-27)
 # ============================================================
 #
 # CHANGELOG
+# - v1.0.1 (2026-01-27)
+#   * FIX: avoid awk "function" keyword to satisfy SMOKE BASHISM gate
 # - v1.0.0 (2026-01-27)
 #   * ADD: safe scanner (report-only) for comments/blank lines/dead patterns
 #
-SCRIPT_VER="v1.0.0"
+SCRIPT_VER="v1.0.1"
 set -u
 
 ts(){ date '+%Y-%m-%d %H:%M:%S'; }
@@ -37,7 +39,6 @@ FILE="$1"
 
 say "scan start: $FILE"
 
-# helper: print matches with line number + snippet
 grep_snip(){
   _label="$1"; _pat="$2"
   say "$_label"
@@ -73,11 +74,13 @@ grep_snip "SUSPICIOUS UNREACHABLE/NO-OP (candidate)" "^[ \t]*(if[ \t]+false|if[ 
 # 6) redundant adjacent duplicate comment lines (candidate)
 say "ADJACENT DUPLICATE COMMENTS (candidate)"
 awk '
-  function norm(s){ gsub(/[ \t]+/," ",s); sub(/^ /,"",s); sub(/ $/,"",s); return s }
   {
     s=$0
     if (s ~ /^[ \t]*#/) {
-      n=norm(s)
+      n=s
+      gsub(/[ \t]+/, " ", n)
+      sub(/^[ ]+/, "", n)
+      sub(/[ ]+$/, "", n)
       if (n==p && n!="") print NR ":" s
       p=n
     } else p=""
