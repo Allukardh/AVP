@@ -4,11 +4,15 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.16 (2026-01-27)
+# Version   : v1.3.17 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.3.17 (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; collapse blank lines; add header Version; no logic change)
+# - vX.Y.Z (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.3.16 (2026-01-27)
 #   * HARDEN: trap cleanup do POL_LOCKDIR (EXIT/HUP/INT/TERM), remove somente se pid==$$.
 # - v1.3.15 (2026-01-26)
@@ -110,7 +114,7 @@
 #   * BASE: enable/disable/status/run; delega execucao ao AVP-ENG
 # =============================================================
 
-SCRIPT_VER="v1.3.16"
+SCRIPT_VER="v1.3.17"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
