@@ -4,11 +4,13 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.38 (2026-01-27)
+# Version   : v1.2.39 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.2.39 (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.2.38 (2026-01-27)
 #   * CHORE: hygiene (whitespace/blank lines; no logic change)
 # - v1.2.37 (2026-01-26)
@@ -150,7 +152,7 @@
 #   * CHORE: observabilidade + quarentena (sem regressao do core)
 # =============================================================
 
-SCRIPT_VER="v1.2.38"
+SCRIPT_VER="v1.2.39"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
