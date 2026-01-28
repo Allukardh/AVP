@@ -4,11 +4,13 @@
 # Component : AVP-CLI
 # File      : avp-cli.sh
 # Role      : Machine-readable status for WebUI/automation (JSON canon + KV fallback)
-# Version   : v1.0.12 (2026-01-27)
+# Version   : v1.0.13 (2026-01-27)
 # Status    : C1 (initial)
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.13 (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.0.12 (2026-01-27)
 #   * CHORE: hygiene (whitespace/blank lines; no logic change)
 # - v1.0.11 (2026-01-26)
@@ -41,7 +43,7 @@
 #   * SAFETY: nunca falha por ausencia de dependencias/policy; sempre retorna JSON valido
 # =============================================================
 
-SCRIPT_VER="v1.0.12"
+SCRIPT_VER="v1.0.13"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
