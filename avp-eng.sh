@@ -4,11 +4,13 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.37 (2026-01-26)
+# Version   : v1.2.38 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.2.38 (2026-01-27)
+#   * CHORE: hygiene (whitespace/blank lines; no logic change)
 # - v1.2.37 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
 # - v1.2.36 (2026-01-26)
@@ -148,7 +150,7 @@
 #   * CHORE: observabilidade + quarentena (sem regressao do core)
 # =============================================================
 
-SCRIPT_VER="v1.2.37"
+SCRIPT_VER="v1.2.38"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -164,9 +166,8 @@ harden_state_dir() {
 
 # PATH robusto para cron/non-interactive (Merlin)
 
-
 # ====== CONFIG ======
-# Canonical AVP paths (directories only) 
+# Canonical AVP paths (directories only)
 CANON_BASE="/jffs/scripts/avp"
 
 AVP_LOGDIR="${AVP_LOGDIR:-/tmp/avp_logs}"

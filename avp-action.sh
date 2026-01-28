@@ -4,11 +4,13 @@
 # Component : AVP-ACTION
 # File      : avp-action.sh
 # Role      : Local action handler (whitelist + token + JSON)
-# Version   : v1.0.18 (2026-01-27)
+# Version   : v1.0.19 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.19 (2026-01-27)
+#   * CHORE: hygiene (whitespace/blank lines; no logic change)
 # - v1.0.18 (2026-01-27)
 #   * FIX: url_decode STRICT %HH agora BusyBox-sed safe (BRE); evita gerar "\x" sem dígitos e restaura UTF-8 (%C3%A1 etc.)
 # - v1.0.17 (2026-01-27)
@@ -56,7 +58,7 @@
 #   * ADD: C2.2 local action handler (whitelist + token + JSON)
 # =============================================================
 
-SCRIPT_VER="v1.0.18"
+SCRIPT_VER="v1.0.19"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -72,7 +74,6 @@ url_decode() {
   esc="$(printf "%s" "$s" | sed 's/\\/\\\\/g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
   printf "%b" "$esc"
 }
-
 
 # PATH robusto para CGI/non-interactive (Merlin/WebUI)
 
