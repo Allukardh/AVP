@@ -4,11 +4,13 @@
 # Component : AVP-LIB
 # File      : avp-lib.sh
 # Role      : Common library (Flash-Safe v1 logs/state + helpers)
-# Version   : v1.0.7 (2026-01-27)
+# Version   : v1.0.8 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.8 (2026-01-27)
+#   * CHORE: hygiene (trim trailing WS; mark legacy example comment)
 # - v1.0.7 (2026-01-27)
 #   * CHORE: hygiene (whitespace/blank lines; no logic change)
 # - v1.0.6 (2026-01-26)
@@ -27,7 +29,7 @@
 #   * ADD: Flash-Safe v1 helpers: rotate_if_big, log_event/error/debug, state_set/get (rate-limited)
 # =============================================================
 
-SCRIPT_VER="v1.0.7"
+SCRIPT_VER="v1.0.8"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
