@@ -4,11 +4,13 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.17 (2026-01-27)
+# Version   : v1.3.18 (2026-02-06)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.3.18 (2026-02-06)
+#   * FIX   : run --live executa mesmo com AUTOVPN_ENABLED=0 (override p/ troubleshooting)
 # - v1.3.17 (2026-01-27)
 #   * CHORE: hygiene (trim trailing WS; collapse blank lines; add header Version; no logic change)
 # - vX.Y.Z (2026-01-27)
@@ -114,7 +116,7 @@
 #   * BASE: enable/disable/status/run; delega execucao ao AVP-ENG
 # =============================================================
 
-SCRIPT_VER="v1.3.17"
+SCRIPT_VER="v1.3.18"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -1091,7 +1093,11 @@ cmd_run() {
   [ "$SHOW_LAST" = "1" ] && { cmd_show_last; return $?; }
 
   init_global
-  [ "${AUTOVPN_ENABLED:-1}" = "1" ] || { logger -t AVP-POL "skip: disabled"; return 0; }
+  if [ "$LIVE_MODE" != "1" ]; then
+    [ "${AUTOVPN_ENABLED:-1}" = "1" ] || { logger -t AVP-POL "skip: disabled"; return 0; }
+  else
+    [ "${AUTOVPN_ENABLED:-1}" = "1" ] || logger -t AVP-POL "live override: running while disabled"
+  fi
   require_policy_files
 
   apply_profile_exports "${AUTOVPN_PROFILE:-$DEFAULT_PROFILE}" 2>/dev/null \
