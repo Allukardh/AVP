@@ -9,6 +9,8 @@
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.9 (2026-02-06)
+#   * FIX: add log_action() helper (required by avp-pol.sh; avoids "not found")
 # - v1.0.8 (2026-01-27)
 #   * CHORE: hygiene (trim trailing WS; mark legacy example comment)
 # - v1.0.7 (2026-01-27)
@@ -29,7 +31,7 @@
 #   * ADD: Flash-Safe v1 helpers: rotate_if_big, log_event/error/debug, state_set/get (rate-limited)
 # =============================================================
 
-SCRIPT_VER="v1.0.8"
+SCRIPT_VER="v1.0.9"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -197,4 +199,20 @@ state_set() {
   chmod 0600 "$AVP_STATE_FILE" 2>/dev/null || true
   echo "$now" > "$lwf" 2>/dev/null || :
   return 0
+}
+
+log_action() {
+  # usage: log_action <action> [k=v ...] [rc=N]
+  local action rc meta kv
+  action="${1:-unknown}"; shift || true
+  rc="0"
+  meta=""
+  for kv in "$@"; do
+    case "$kv" in
+      rc=*) rc="${kv#rc=}" ;;
+    esac
+    meta="$meta $kv"
+  done
+  meta="${meta# }"
+  log_event "POL" "action=$action" "$rc" "$meta"
 }
