@@ -4,7 +4,7 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.40 (2026-01-27)
+# Version   : v1.2.40 (2026-02-06)
 # Status    : stable
 # =============================================================
 #
