@@ -4,11 +4,13 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.19 (2026-02-06)
+# Version   : v1.3.20 (2026-02-06)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.3.20 (2026-02-06)
+#   * FIX: restore reload --async (GUI) + keep sync wait-for-DONE (no regression)
 # - v1.3.19 (2026-02-06)
 #   * FIX: reload sincrono (aguarda " - DONE" no ultimo log) + rc/msg coerentes
 # - v1.3.18 (2026-02-06)
@@ -118,7 +120,7 @@
 #   * BASE: enable/disable/status/run; delega execucao ao AVP-ENG
 # =============================================================
 
-SCRIPT_VER="v1.3.19"
+SCRIPT_VER="v1.3.20"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -866,28 +868,104 @@ cmd_device_set() {
 }
 
 cmd_reload() {
-  local _before _after lf rc msg ok i
+  local ASYNC RUN_ARGS WAIT_SECS
+  local _before _after lf rc msg ok i tsn tmpf payload pid
+
+  ASYNC=0
+  RUN_ARGS=""
+  WAIT_SECS=15
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --async) ASYNC=1; shift;;
+      --wait=*) WAIT_SECS="${1#--wait=}"; shift;;
+      -h|--help) json_err 0 "reload" "usage" "{\"hint\":\"reload [--async] [--wait=N]\"}"; return 0;;
+      token=*) _tok="${1#token=}"; TOKEN="$_tok"; AVP_TOKEN="$_tok"; export TOKEN AVP_TOKEN; shift;;
+      *) data="$(printf "{ \"opt\":\"%s\" }" "$(jesc "$1")")"; json_err 2 "reload" "unknown option" "$data"; return 2;;
+    esac
+  done
+
+  ensure_state_dir
+
+  # pega referencia do ultimo log ANTES de rodar
   _before="$(ls -1t "$AVP_LOGDIR"/avp_eng_*.log 2>/dev/null | head -n 1)"
+
+  if [ "$ASYNC" = "1" ]; then
+    # modo async (GUI): marca PENDING e agenda
+    tsn="$(ts_epoch)"
+    tmpf="${AVP_GUI_APPLY_STATE}.tmp.$tsn.$$"
+    payload="$(printf "TS=%s\nRC=PENDING\nLAST_LOG=\n" "$tsn")"
+    state_write_file "$AVP_GUI_APPLY_STATE" "$payload" 2>/dev/null || :
+
+    log_action "reload" "mode=async" "rc=pending"
+
+    (
+      local _b _a _lf _rc _msg _ok _i _ts2 _tmp2 _pl
+      _b="$(ls -1t "$AVP_LOGDIR"/avp_eng_*.log 2>/dev/null | head -n 1)"
+      cmd_run >/dev/null 2>&1
+      _rc=$?
+      _a="$(ls -1t "$AVP_LOGDIR"/avp_eng_*.log 2>/dev/null | head -n 1)"
+      _lf="${_a:-${_b:-}}"
+
+      if [ -n "${_lf:-}" ]; then
+        _i=0
+        while [ $_i -lt "$WAIT_SECS" ]; do
+          grep -q " - DONE" "$_lf" 2>/dev/null && break
+          sleep 1
+          _i=$((_i+1))
+        done
+      fi
+
+      if [ "$_rc" -eq 0 ] && [ -n "${_lf:-}" ] && grep -q " - DONE" "$_lf" 2>/dev/null; then
+        _msg="applied"; _ok=1
+      else
+        [ "$_rc" -eq 0 ] && _rc=99
+        _msg="apply_failed"; _ok=0
+      fi
+
+      _ts2="$(ts_epoch)"
+      _pl="$(printf "TS=%s\nRC=%s\nLAST_LOG=%s\n" "$_ts2" "$_rc" "${_lf:-}")"
+      state_write_file "$AVP_GUI_APPLY_STATE" "$_pl" 2>/dev/null || :
+
+      logger -t AVP-POL "reload_async_done rc=$_rc last_log=${_lf:-none}"
+      log_action "reload" "mode=async_done" "rc=$_rc" "last_log=${_lf:-}"
+    ) >/dev/null 2>&1 &
+    pid=$!
+
+    data="$(printf "{ \"scheduled\":true,\"pid\":\"%s\" }" "$(jesc "$pid")")"
+    json_reply 1 0 "reload" "scheduled" "$data"
+    return 0
+  fi
+
+  # modo sync (CLI): roda e aguarda DONE no ultimo log
   cmd_run >/dev/null 2>&1
   rc=$?
   _after="$(ls -1t "$AVP_LOGDIR"/avp_eng_*.log 2>/dev/null | head -n 1)"
   lf="${_after:-${_before:-}}"
+
   if [ -n "${lf:-}" ]; then
     i=0
-    while [ $i -lt 15 ]; do
+    while [ $i -lt "$WAIT_SECS" ]; do
       grep -q " - DONE" "$lf" 2>/dev/null && break
       sleep 1
       i=$((i+1))
     done
   fi
+
   if [ "$rc" -eq 0 ] && [ -n "${lf:-}" ] && grep -q " - DONE" "$lf" 2>/dev/null; then
     msg="applied"; ok=1
   else
     [ "$rc" -eq 0 ] && rc=99
     msg="apply_failed"; ok=0
   fi
-  log_action "reload" "rc=$rc" "msg=$msg" "log=$lf"
+
+  tsn="$(ts_epoch)"
+  payload="$(printf "TS=%s\nRC=%s\nLAST_LOG=%s\n" "$tsn" "$rc" "${lf:-}")"
+  state_write_file "$AVP_GUI_APPLY_STATE" "$payload" 2>/dev/null || :
+
+  log_action "reload" "rc=$rc" "msg=$msg" "last_log=${lf:-}"
   json_reply "$ok" "$rc" "reload" "$msg" "{ \"last_log\":\"$(jesc "$lf")\" }"
+  return $rc
 }
 
 cmd_snapshot() {
