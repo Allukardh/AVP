@@ -4,7 +4,7 @@
 # Component : AVP-LIB
 # File      : avp-lib.sh
 # Role      : Common library (Flash-Safe v1 logs/state + helpers)
-# Version   : v1.0.8 (2026-01-27)
+# Version   : v1.0.9 (2026-02-06)
 # Status    : stable
 # =============================================================
 #
@@ -108,6 +108,7 @@ _avp_log_line() {
 
 # Classe A (flash): eventos e erros (1 linha por ocorrência importante)
 log_event() {
+  local comp msg rc meta ts line
   comp="$1"; shift
   msg="$1"; shift
   rc="${1:-0}"; shift || :
@@ -116,6 +117,7 @@ log_event() {
 }
 
 log_error() {
+  local comp msg rc meta
   comp="$1"; shift
   msg="$1"; shift
   rc="${1:-1}"; shift || :
@@ -125,6 +127,7 @@ log_error() {
 
 # Classe B (tmp): debug verboso (opcional)
 log_debug() {
+  local comp msg rc meta
   comp="$1"; shift
   msg="$1"; shift
   meta="$*"
