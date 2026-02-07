@@ -4,11 +4,13 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.39 (2026-01-27)
+# Version   : v1.2.40 (2026-01-27)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.2.40 (2026-02-06)
+#   * FIX: init dev_mode no state quando ausente (evita WebUI/CLI "unknown" em devices novos)
 # - v1.2.39 (2026-01-27)
 #   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.2.38 (2026-01-27)
@@ -152,7 +154,7 @@
 #   * CHORE: observabilidade + quarentena (sem regressao do core)
 # =============================================================
 
-SCRIPT_VER="v1.2.39"
+SCRIPT_VER="v1.2.40"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -741,7 +743,11 @@ run_device() {
   set_state last_real_table "${CUR_RAW:-wan}"
 
   DEV_MODE_STATE="$(get_state dev_mode)"
-  [ -z "${DEV_MODE_STATE:-}" ] && DEV_MODE_STATE="$MODE_REAL"
+  if [ -z "${DEV_MODE_STATE:-}" ]; then
+    # init: state novo/legado sem dev_mode => persistir p/ GUI/CLI (evita "unknown")
+    set_state dev_mode "$MODE_REAL"
+    DEV_MODE_STATE="$MODE_REAL"
+  fi
 
   if [ "$DEV_MODE_STATE" != "$MODE_REAL" ]; then
     echo "[STATE] reconcile: state_mode=$DEV_MODE_STATE -> real_mode=$MODE_REAL (current_table=$CUR)"
