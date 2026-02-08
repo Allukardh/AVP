@@ -4,11 +4,13 @@
 # Component : AVP-LIB
 # File      : avp-lib.sh
 # Role      : Common library (Flash-Safe v1 logs/state + helpers)
-# Version   : v1.0.9 (2026-02-06)
+# Version   : v1.0.10 (2026-02-08)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.10 (2026-02-08)
+#   * FIX: log_action() garante rc numerico antes de logar (evita JSON invalido)
 # - v1.0.9 (2026-02-06)
 #   * FIX: add log_action() helper (required by avp-pol.sh; avoids "not found")
 # - v1.0.8 (2026-01-27)
@@ -31,7 +33,7 @@
 #   * ADD: Flash-Safe v1 helpers: rotate_if_big, log_event/error/debug, state_set/get (rate-limited)
 # =============================================================
 
-SCRIPT_VER="v1.0.9"
+SCRIPT_VER="v1.0.10"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -217,5 +219,8 @@ log_action() {
     meta="$meta $kv"
   done
   meta="${meta# }"
+  case "$rc" in
+    (""|*[!0-9]*) rc="0" ;;
+  esac
   log_event "POL" "action=$action" "$rc" "$meta"
 }
