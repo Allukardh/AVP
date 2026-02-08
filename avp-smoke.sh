@@ -4,11 +4,13 @@
 # Component : AVP-SMOKE
 # File      : avp-smoke.sh
 # Role      : Pre/Post/Hotfix gates (baseline + patch-safety + syntax + JSON probes + WebUI ASP gate)
-# Version   : v1.4.8 (2026-01-26)
+# Version   : v1.4.9 (2026-02-08)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.4.9 (2026-02-08)
+#   * FIX: BASHISM gate nao reprova local (busybox ash); continua bloqueando declare/typeset/function/source
 # - v1.4.8 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico + STRICT defaults)
 # - v1.4.7 (2026-01-26)
@@ -110,7 +112,7 @@
 #   * ADD: initial release
 # =============================================================
 
-SCRIPT_VER="v1.4.8"
+SCRIPT_VER="v1.4.9"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -587,9 +589,9 @@ gate_bashisms() {
           _fail=1
         fi
 
-        if grep -nE '^[[:space:]]*(local|declare|typeset|function|source)[[:space:]]+' "$f" >/dev/null 2>&1; then
-          err "BASHISM gate: $f contém local/declare/typeset/function/source"
-          grep -nE '^[[:space:]]*(local|declare|typeset|function|source)[[:space:]]+' "$f" | head -n 3 >&2
+        if grep -nE '^[[:space:]]*(declare|typeset|function|source)[[:space:]]+' "$f" >/dev/null 2>&1; then
+          err "BASHISM gate: $f contém declare/typeset/function/source"
+          grep -nE '^[[:space:]]*(declare|typeset|function|source)[[:space:]]+' "$f" | head -n 3 >&2
           _fail=1
         fi
 
