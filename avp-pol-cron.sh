@@ -4,11 +4,13 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.13 (2026-01-27)
+# Version   : v1.0.14 (2026-02-09)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.14 (2026-02-09)
+#   * FIX: emit_error usa log_error (avp-lib); remove JSON manual em avp_errors.log
 # - v1.0.13 (2026-01-27)
 #   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.0.12 (2026-01-26)
@@ -42,22 +44,27 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.13"
+SCRIPT_VER="v1.0.14"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
-emit_error(){
-  ts="$(date +%s)"
-  rc="$1"
-  msg="$2"
-  echo "{\"ts\":\"$ts\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$msg\",\"rc\":$rc}" >> /jffs/scripts/logs/avp_errors.log
-}
 
 AVP_LIB="/jffs/scripts/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
 type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
 has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
+
+emit_error(){
+  rc="$1"
+  msg="$2"
+  if type log_error >/dev/null 2>&1; then
+    log_error "AVP-POL-CRON" "$msg" "$rc"
+  else
+    tsn="$(date +%s)"
+    echo "{\"ts\":\"$tsn\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$msg\",\"rc\":$rc}" >> /jffs/scripts/logs/avp_errors.log
+  fi
+}
 
 ts(){ date "+%F %T"; }
 ROTATE_MAX=262144  # 256 KiB

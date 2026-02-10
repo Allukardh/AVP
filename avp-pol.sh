@@ -4,11 +4,14 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.20 (2026-02-06)
+# Version   : v1.3.21 (2026-02-09)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.3.21 (2026-02-09)
+#   * FIX: enforce perms 0600 em policy confs (global/profiles/devices) via require_*
+#   * POLISH: async reload usa rc_state=pending (rc numerico no contrato)
 # - v1.3.20 (2026-02-06)
 #   * FIX: restore reload --async (GUI) + keep sync wait-for-DONE (no regression)
 # - v1.3.19 (2026-02-06)
@@ -120,7 +123,7 @@
 #   * BASE: enable/disable/status/run; delega execucao ao AVP-ENG
 # =============================================================
 
-SCRIPT_VER="v1.3.20"
+SCRIPT_VER="v1.3.21"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -291,10 +294,17 @@ is_rule() {
   esac
 }
 
+fix_policy_perms() {
+  [ -f "$GLOBAL_CONF" ] && chmod 0600 "$GLOBAL_CONF" 2>/dev/null || :
+  [ -f "$PROFILES_CONF" ] && chmod 0600 "$PROFILES_CONF" 2>/dev/null || :
+  [ -f "$DEVICES_CONF" ] && chmod 0600 "$DEVICES_CONF" 2>/dev/null || :
+}
+
 require_profiles_files() {
   [ -d "$POLICY_DIR" ] || die 10 "policy_dir ausente: $POLICY_DIR"
   [ -f "$GLOBAL_CONF" ] || die 10 "global.conf ausente: $GLOBAL_CONF"
   [ -f "$PROFILES_CONF" ] || die 10 "profiles.conf ausente: $PROFILES_CONF"
+  fix_policy_perms
 }
 
 profile_exists() { grep -q "^\[$1\]" "$PROFILES_CONF" 2>/dev/null; }
@@ -394,7 +404,9 @@ require_policy_files() {
   [ -d "$POLICY_DIR" ] || die 10 "policy_dir ausente: $POLICY_DIR"
   [ -f "$GLOBAL_CONF" ] || die 10 "global.conf ausente: $GLOBAL_CONF"
   [ -f "$PROFILES_CONF" ] || die 10 "profiles.conf ausente: $PROFILES_CONF"
+  fix_policy_perms
   [ -f "$DEVICES_CONF" ] || die 10 "devices.conf ausente: $DEVICES_CONF"
+  fix_policy_perms
   devices_conf_has_entries || die 20 "devices.conf ausente/vazio/inválido: $DEVICES_CONF"
 }
 
@@ -897,7 +909,7 @@ cmd_reload() {
     payload="$(printf "TS=%s\nRC=PENDING\nLAST_LOG=\n" "$tsn")"
     state_write_file "$AVP_GUI_APPLY_STATE" "$payload" 2>/dev/null || :
 
-    log_action "reload" "mode=async" "rc=pending"
+    log_action "reload" "mode=async" "rc_state=pending"
 
     (
       local _b _a _lf _rc _msg _ok _i _ts2 _tmp2 _pl
