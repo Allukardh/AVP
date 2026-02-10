@@ -4,36 +4,41 @@
 # Component : AVP-WEBUI
 # File      : service-event
 # Role      : Firmware hook for WebUI Console actions (rc_service -> avp-action.sh)
-# Version   : v1.0.0 (2026-02-10)
+# Version   : v1.0.2 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.2 (2026-02-10)
+#   * FIX: accept Merlin service-event args (event=start/stop/restart, target=svc) and also restart_svc form
+#   * ADD: log argv + normalized event/target for observability
+# - v1.0.1 (2026-02-10)
+#   * FIX: BusyBox/Merlin: remove dependency on 'install' (use cp+chmod only)
+#   * FIX: last-action writer now deterministic on Merlin
 # - v1.0.0 (2026-02-10)
-#   * ADD   : hook for rc_service=avp_webui_restart (nvram contract avp_webui_*)
-#   * ADD   : last-action JSON writer (/www/user + /tmp/var/wwwext) + action log
-#   * ADD   : alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
+#   * ADD: hook for rc_service=avp_webui_restart (nvram contract avp_webui_*)
+#   * ADD: last-action JSON writer (/www/user + /tmp/var/wwwext) + action log
+#   * ADD: alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
 # =============================================================
 
-SCRIPT_VER="v1.0.0"
+SCRIPT_VER="v1.0.2"
 
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 export GIT_PAGER=cat PAGER=cat
 hash -r 2>/dev/null || true
 
-# --- constants ---
 LOGP="/tmp/avp_logs/avp_webui_action.log"
 LAST_WWW="/www/user/avp-action-last.json"
 LAST_TMP="/tmp/var/wwwext/avp-action-last.json"
 ACT="/jffs/scripts/avp-action.sh"
 POL="/jffs/scripts/avp-pol.sh"
 
-ts() { date '+%Y-%m-%d %H:%M:%S'; }
+ts_h() { date '+%Y-%m-%d %H:%M:%S'; }
+ts_s() { date +%s; }
 
 log() {
-  # log line: ts | event= | action= | rc= | msg=
   mkdir -p "/tmp/avp_logs" 2>/dev/null || true
-  printf '%s | %s\n' "$(ts)" "${*:-}" >>"$LOGP"
+  printf '%s | %s\n' "$(ts_h)" "${*:-}" >>"$LOGP"
 }
 
 trim() { printf "%s" "${1:-}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
@@ -41,7 +46,6 @@ trim() { printf "%s" "${1:-}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]
 is_ip() { printf "%s" "${1:-}" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
 
 jesc() {
-  # minimal JSON string escape (enough for msg/log)
   printf "%s" "${1:-}" | sed \
     -e 's/\\/\\\\/g' \
     -e 's/"/\\"/g' \
@@ -55,7 +59,7 @@ json_err() {
   rc="${2:-1}"
   action="${3:-dispatch}"
   msg="${4:-error}"
-  tsj="$(date +%s)"
+  tsj="$(ts_s)"
   printf '{"ok":%s,"rc":%s,"action":"%s","msg":"%s","data":{},"ts":%s}\n' \
     "$ok" "$rc" "$(jesc "$action")" "$(jesc "$msg")" "$tsj"
 }
@@ -64,17 +68,16 @@ write_last() {
   src="${1:-}"
   [ -n "${src:-}" ] || return 1
   mkdir -p "/www/user" "/tmp/var/wwwext" 2>/dev/null || true
-  install -m 0644 "$src" "$LAST_WWW" 2>/dev/null || cp -f "$src" "$LAST_WWW"
-  install -m 0644 "$src" "$LAST_TMP" 2>/dev/null || cp -f "$src" "$LAST_TMP"
+
+  cp -f "$src" "$LAST_WWW" 2>/dev/null || return 1
+  chmod 0644 "$LAST_WWW" 2>/dev/null || true
+
+  cp -f "$src" "$LAST_TMP" 2>/dev/null || true
+  chmod 0644 "$LAST_TMP" 2>/dev/null || true
   return 0
 }
 
 parse_device_contract() {
-  # Inputs:
-  #   $1 = device_key (nvram avp_webui_device)
-  #   $2 = payload    (nvram avp_webui_payload)
-  # Outputs (echo):
-  #   label=<...> ip=<...> rule=<...>
   dev="$(trim "${1:-}")"
   payload="$(trim "${2:-}")"
 
@@ -82,7 +85,7 @@ parse_device_contract() {
   ip=""
   rule=""
 
-  # payload: prefer "<ip> [rule]"
+  # payload prefer "<ip> [rule]"
   if [ -n "${payload:-}" ]; then
     case "$payload" in
       \{*\}) : ;; # ignore JSON payload for AGORA
@@ -96,7 +99,7 @@ parse_device_contract() {
     esac
   fi
 
-  # device_key: accept "<label> <ip> [rule]" or just "<label>"
+  # device_key accept "<label> <ip> [rule]" or "<label>"
   if [ -n "${dev:-}" ]; then
     set -- $dev
     [ -z "${label:-}" ] && [ $# -ge 1 ] && label="$1"
@@ -105,7 +108,6 @@ parse_device_contract() {
   fi
 
   [ -z "${rule:-}" ] && rule="balanced"
-
   printf 'label=%s ip=%s rule=%s\n' "$label" "$ip" "$rule"
 }
 
@@ -133,7 +135,6 @@ run_action() {
     fi
   fi
 
-  # build argv for avp-action.sh
   argv="action=$action"
   [ -n "${token:-}" ]   && argv="$argv token=$token"
   [ -n "${profile:-}" ] && argv="$argv profile=$profile"
@@ -149,14 +150,13 @@ run_action() {
       [ -n "${rule:-}" ]  && argv="$argv rule=$rule"
       ;;
     device_del)
-      # label only (best-effort: first token of device key)
       d="$(trim "$device")"
       set -- $d
       [ $# -ge 1 ] && argv="$argv label=$1"
       ;;
   esac
 
-  tmp="/tmp/avp_webui_last.$$.$(date +%s)"
+  tmp="/tmp/avp_webui_last.$$.$(ts_s)"
   tmp_err="${tmp}.err"
 
   if [ ! -x "$ACT" ]; then
@@ -167,11 +167,9 @@ run_action() {
     return 10
   fi
 
-  # run action (stdout json)
   "$ACT" $argv >"$tmp" 2>"$tmp_err"
   rc=$?
 
-  # if stdout isn't JSON, synthesize an error JSON
   first="$(head -n 1 "$tmp" 2>/dev/null || true)"
   case "$first" in
     \{*\}) : ;;
@@ -188,8 +186,40 @@ run_action() {
   return "$rc"
 }
 
+normalize_call() {
+  a1="$(trim "${1:-}")"
+  a2="$(trim "${2:-}")"
+
+  verb=""
+  tgt=""
+
+  # Merlin default: $1=event (start/stop/restart), $2=target
+  case "$a1" in
+    start|stop|restart)
+      verb="$a1"
+      tgt="$a2"
+      ;;
+    start_*|stop_*|restart_*)
+      verb="${a1%%_*}"
+      tgt="${a1#*_}"
+      ;;
+    *)
+      # legacy/manual: $1=target only
+      verb="manual"
+      tgt="$a1"
+      ;;
+  esac
+
+  printf '%s %s\n' "$verb" "$tgt"
+}
+
 main() {
-  ev="${1:-}"
+  n="$(normalize_call "$1" "$2")"
+  verb="$(printf "%s" "$n" | awk '{print $1}')"
+  ev="$(printf "%s" "$n" | awk '{print $2}')"
+
+  log "service-event argv=[$*] verb=$verb target=$ev"
+
   [ -n "${ev:-}" ] || exit 0
 
   case "$ev" in
@@ -207,12 +237,10 @@ main() {
       payload="$(trim "$payload")"
 
       [ -n "${action:-}" ] || action="status"
-
       run_action "$action" "$token" "$profile" "$device" "$payload"
       exit $?
       ;;
     *)
-      # ignore other events to avoid regressions
       exit 0
       ;;
   esac
