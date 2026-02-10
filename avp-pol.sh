@@ -4,11 +4,13 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.21 (2026-02-09)
+# Version   : v1.3.22 (2026-02-09)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.3.22 (2026-02-09)
+#   * HARDEN: fix_policy_perms tambem alinha ownership (chown UID:GID best-effort) nos .conf
 # - v1.3.21 (2026-02-09)
 #   * FIX: enforce perms 0600 em policy confs (global/profiles/devices) via require_*
 #   * POLISH: async reload usa rc_state=pending (rc numerico no contrato)
@@ -123,7 +125,7 @@
 #   * BASE: enable/disable/status/run; delega execucao ao AVP-ENG
 # =============================================================
 
-SCRIPT_VER="v1.3.21"
+SCRIPT_VER="v1.3.22"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -295,9 +297,32 @@ is_rule() {
 }
 
 fix_policy_perms() {
-  [ -f "$GLOBAL_CONF" ] && chmod 0600 "$GLOBAL_CONF" 2>/dev/null || :
+  _ref=""
+  _uid="0"
+  _gid="0"
+
+  # Prefer devices.conf (if present) to mirror intended policy ownership; fallback to global.conf; final fallback 0:0
+  if [ -f "$DEVICES_CONF" ]; then
+    _ref="$DEVICES_CONF"
+  elif [ -f "$GLOBAL_CONF" ]; then
+    _ref="$GLOBAL_CONF"
+  fi
+
+  if [ -n "${_ref:-}" ]; then
+    _uid="$(ls -ln "$_ref" 2>/dev/null | awk '{print $3}')"
+    _gid="$(ls -ln "$_ref" 2>/dev/null | awk '{print $4}')"
+    case "${_uid:-}" in ""|*[!0-9]* ) _uid="0";; esac
+    case "${_gid:-}" in ""|*[!0-9]* ) _gid="0";; esac
+  fi
+
+  # perms + ownership (best-effort; never fatal)
+  [ -f "$GLOBAL_CONF" ]   && chmod 0600 "$GLOBAL_CONF"   2>/dev/null || :
   [ -f "$PROFILES_CONF" ] && chmod 0600 "$PROFILES_CONF" 2>/dev/null || :
-  [ -f "$DEVICES_CONF" ] && chmod 0600 "$DEVICES_CONF" 2>/dev/null || :
+  [ -f "$DEVICES_CONF" ]  && chmod 0600 "$DEVICES_CONF"  2>/dev/null || :
+
+  [ -f "$GLOBAL_CONF" ]   && chown "${_uid}:${_gid}" "$GLOBAL_CONF"   2>/dev/null || :
+  [ -f "$PROFILES_CONF" ] && chown "${_uid}:${_gid}" "$PROFILES_CONF" 2>/dev/null || :
+  [ -f "$DEVICES_CONF" ]  && chown "${_uid}:${_gid}" "$DEVICES_CONF"  2>/dev/null || :
 }
 
 require_profiles_files() {
