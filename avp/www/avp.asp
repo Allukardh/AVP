@@ -5,11 +5,15 @@ AutoVPN Platform (AVP)
 Component : AVP-WEBUI (ASP)
 File      : avp.asp
 Role      : WebUI frontend (router user page)
-Version   : v1.0.11 (2026-01-27)
+Version   : v1.0.14 (2026-02-09)
 Status    : stable
 =============================================================
 
 CHANGELOG
+- v1.0.14 (2026-02-09)
+  * FIX: toolbar Order/Auto-refresh (rebuild HTML; restore options/labels) + keep default devices.conf order
+- v1.0.13 (2026-02-09)
+  * UX: Order selector (devices.conf default; optional label/pref) + persist in localStorage (fix HTML injection + smoke gate)
 - v1.0.11 (2026-01-27) - CHORE: changelog entry (smoke gate)
 - v1.0.10 (2026-01-08)
   * CHG: logs (FEED_STATE/FEED_WARN/POL_LAST) agora em /tmp/avp_logs — evita escrita no jffs
@@ -84,14 +88,24 @@ CHANGELOG
         </label>
 
         <label class="muted">
+          Order
+          <select id="order">
+            <option value="conf">devices.conf</option>
+            <option value="label">label</option>
+            <option value="pref">pref</option>
+          </select>
+        </label>
+
+        <label class="muted">
           Auto-refresh
           <select id="auto">
             <option value="0">off</option>
-            <option value="5" selected>5s</option>
+            <option value="5">5s</option>
             <option value="10">10s</option>
             <option value="30">30s</option>
           </select>
         </label>
+
       </div>
       <div class="muted" style="margin-top:8px;">
         Endpoint: <code>/user/avp-status.json</code>
@@ -127,7 +141,7 @@ CHANGELOG
   const $ = (id)=>document.getElementById(id);
   let timer = null;
 
-  const WEBUI_VER = "v1.0.11";
+  const WEBUI_VER = "v1.0.14";
   if ($("ver")) $("ver").textContent = "WebUI " + WEBUI_VER;
 
 
@@ -246,8 +260,13 @@ CHANGELOG
       if (f === "vpn") devs = devs.filter(d => String(d.state||"").toLowerCase() === "vpn");
       if (f === "wan") devs = devs.filter(d => String(d.state||"").toLowerCase() === "wan");
 
-      // ordenar por label
-      devs.sort((a,b)=> String(a.label||"").localeCompare(String(b.label||"")));
+      // order (default: devices.conf order)
+      const ord = $("order") ? String($("order").value || "conf") : (localStorage.getItem("avp_order") || "conf");
+      if (ord === "label"){
+        devs.sort((a,b)=> String(a.label||"").localeCompare(String(b.label||"")));
+      } else if (ord === "pref"){
+        devs.sort((a,b)=> (parseInt(a.pref,10)||999999) - (parseInt(b.pref,10)||999999) || String(a.label||"").localeCompare(String(b.label||"")));
+      }
 
       if (!devs.length){
         tb.innerHTML = '<tr><td colspan="6" class="muted">No devices</td></tr>';
@@ -396,6 +415,15 @@ CHANGELOG
   }
   if ($("filter")){
     $("filter").addEventListener("change", load);
+  }
+  if ($("order")){
+    const k = "avp_order";
+    const v = localStorage.getItem(k) || "conf";
+    $("order").value = v;
+    $("order").addEventListener("change", function(){
+      localStorage.setItem(k, this.value || "conf");
+      load();
+    });
   }
 
   document.addEventListener("visibilitychange", function(){
