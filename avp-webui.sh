@@ -4,11 +4,13 @@
 # Component : AVP-WEBUI Installer/Orchestrator
 # File      : avp-webui.sh
 # Role      : WebUI installer/orchestrator
-# Version   : v1.0.10 (2026-01-26)
+# Version   : v1.0.11 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.11 (2026-02-10)
+#   * FIX: install: evita falha 'cp same file' detectando SRC/DST por inode (BusyBox-safe) e pulando copy
 # - v1.0.10 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
 # - v1.0.9 (2026-01-18)
@@ -32,7 +34,7 @@
 #   * ADD: Daemon feeder avp-webui-feed.sh (atualiza JSON a cada 5s)
 # =============================================================
 
-SCRIPT_VER="v1.0.10"
+SCRIPT_VER="v1.0.11"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -106,7 +108,17 @@ install() {
 
   # if source already equals destination, keep it (avoid cp same-file error)
   if [ "$ASP_SRC" != "${WWW_DIR}/avp.asp" ]; then
-    cp -f "$ASP_SRC" "${WWW_DIR}/avp.asp" || die "failed to copy avp.asp from $ASP_SRC"
+    {
+      # FIX same-file: SRC e DST podem apontar pro mesmo inode via symlink/bind; cp falha.
+      local _src_i _dst_i
+      _src_i="$(ls -Li "$ASP_SRC" 2>/dev/null | awk 'NR==1{print $1; exit}')"
+      _dst_i="$(ls -Li "${WWW_DIR}/avp.asp" 2>/dev/null | awk 'NR==1{print $1; exit}')"
+      if [ -n "$_src_i" ] && [ -n "$_dst_i" ] && [ "$_src_i" = "$_dst_i" ]; then
+        : # same file, skip copy
+      else
+        cp -f "$ASP_SRC" "${WWW_DIR}/avp.asp" || die "failed to copy avp.asp from $ASP_SRC"
+      fi
+    }
   fi
   chmod 0644 "${WWW_DIR}/avp.asp" >/dev/null 2>&1 || true
 
