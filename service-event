@@ -1,0 +1,221 @@
+#!/bin/sh
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-WEBUI
+# File      : service-event
+# Role      : Firmware hook for WebUI Console actions (rc_service -> avp-action.sh)
+# Version   : v1.0.0 (2026-02-10)
+# Status    : stable
+# =============================================================
+#
+# CHANGELOG
+# - v1.0.0 (2026-02-10)
+#   * ADD   : hook for rc_service=avp_webui_restart (nvram contract avp_webui_*)
+#   * ADD   : last-action JSON writer (/www/user + /tmp/var/wwwext) + action log
+#   * ADD   : alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
+# =============================================================
+
+SCRIPT_VER="v1.0.0"
+
+export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export GIT_PAGER=cat PAGER=cat
+hash -r 2>/dev/null || true
+
+# --- constants ---
+LOGP="/tmp/avp_logs/avp_webui_action.log"
+LAST_WWW="/www/user/avp-action-last.json"
+LAST_TMP="/tmp/var/wwwext/avp-action-last.json"
+ACT="/jffs/scripts/avp-action.sh"
+POL="/jffs/scripts/avp-pol.sh"
+
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+
+log() {
+  # log line: ts | event= | action= | rc= | msg=
+  mkdir -p "/tmp/avp_logs" 2>/dev/null || true
+  printf '%s | %s\n' "$(ts)" "${*:-}" >>"$LOGP"
+}
+
+trim() { printf "%s" "${1:-}" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'; }
+
+is_ip() { printf "%s" "${1:-}" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; }
+
+jesc() {
+  # minimal JSON string escape (enough for msg/log)
+  printf "%s" "${1:-}" | sed \
+    -e 's/\\/\\\\/g' \
+    -e 's/"/\\"/g' \
+    -e 's/\t/\\t/g' \
+    -e 's/\r/\\r/g' \
+    -e 's/\n/\\n/g'
+}
+
+json_err() {
+  ok="${1:-false}"
+  rc="${2:-1}"
+  action="${3:-dispatch}"
+  msg="${4:-error}"
+  tsj="$(date +%s)"
+  printf '{"ok":%s,"rc":%s,"action":"%s","msg":"%s","data":{},"ts":%s}\n' \
+    "$ok" "$rc" "$(jesc "$action")" "$(jesc "$msg")" "$tsj"
+}
+
+write_last() {
+  src="${1:-}"
+  [ -n "${src:-}" ] || return 1
+  mkdir -p "/www/user" "/tmp/var/wwwext" 2>/dev/null || true
+  install -m 0644 "$src" "$LAST_WWW" 2>/dev/null || cp -f "$src" "$LAST_WWW"
+  install -m 0644 "$src" "$LAST_TMP" 2>/dev/null || cp -f "$src" "$LAST_TMP"
+  return 0
+}
+
+parse_device_contract() {
+  # Inputs:
+  #   $1 = device_key (nvram avp_webui_device)
+  #   $2 = payload    (nvram avp_webui_payload)
+  # Outputs (echo):
+  #   label=<...> ip=<...> rule=<...>
+  dev="$(trim "${1:-}")"
+  payload="$(trim "${2:-}")"
+
+  label=""
+  ip=""
+  rule=""
+
+  # payload: prefer "<ip> [rule]"
+  if [ -n "${payload:-}" ]; then
+    case "$payload" in
+      \{*\}) : ;; # ignore JSON payload for AGORA
+      *)
+        set -- $payload
+        if [ $# -ge 1 ] && is_ip "$1"; then
+          ip="$1"
+          [ $# -ge 2 ] && rule="$2"
+        fi
+        ;;
+    esac
+  fi
+
+  # device_key: accept "<label> <ip> [rule]" or just "<label>"
+  if [ -n "${dev:-}" ]; then
+    set -- $dev
+    [ -z "${label:-}" ] && [ $# -ge 1 ] && label="$1"
+    if [ -z "${ip:-}" ] && [ $# -ge 2 ] && is_ip "$2"; then ip="$2"; fi
+    if [ -z "${rule:-}" ] && [ $# -ge 3 ]; then rule="$3"; fi
+  fi
+
+  [ -z "${rule:-}" ] && rule="balanced"
+
+  printf 'label=%s ip=%s rule=%s\n' "$label" "$ip" "$rule"
+}
+
+run_action() {
+  action="$(trim "${1:-}")"
+  token="$(trim "${2:-}")"
+  profile="$(trim "${3:-}")"
+  device="$(trim "${4:-}")"
+  payload="$(trim "${5:-}")"
+
+  # aliases (frontend -> backend)
+  case "$action" in
+    device_remove) action="device_del" ;;
+    device_update) action="device_set" ;;
+  esac
+
+  # toggle -> enable/disable (based on POL status enabled)
+  if [ "$action" = "toggle" ]; then
+    if [ -x "$POL" ]; then
+      st="$("$POL" status --json 2>/dev/null | tail -n 1 | tr -d '\r\n')"
+      en="$(printf "%s" "$st" | sed -n 's/.*"enabled":\([01]\).*/\1/p' | head -n 1)"
+      if [ "$en" = "1" ]; then action="disable"; else action="enable"; fi
+    else
+      action="enable"
+    fi
+  fi
+
+  # build argv for avp-action.sh
+  argv="action=$action"
+  [ -n "${token:-}" ]   && argv="$argv token=$token"
+  [ -n "${profile:-}" ] && argv="$argv profile=$profile"
+
+  case "$action" in
+    device_add|device_set)
+      kv="$(parse_device_contract "$device" "$payload")"
+      label="$(printf "%s" "$kv" | sed -n 's/^label=\([^ ]*\).*/\1/p')"
+      ip="$(printf "%s" "$kv" | sed -n 's/.* ip=\([^ ]*\).*/\1/p')"
+      rule="$(printf "%s" "$kv" | sed -n 's/.* rule=\([^ ]*\).*/\1/p')"
+      [ -n "${label:-}" ] && argv="$argv label=$label"
+      [ -n "${ip:-}" ]    && argv="$argv ip=$ip"
+      [ -n "${rule:-}" ]  && argv="$argv rule=$rule"
+      ;;
+    device_del)
+      # label only (best-effort: first token of device key)
+      d="$(trim "$device")"
+      set -- $d
+      [ $# -ge 1 ] && argv="$argv label=$1"
+      ;;
+  esac
+
+  tmp="/tmp/avp_webui_last.$$.$(date +%s)"
+  tmp_err="${tmp}.err"
+
+  if [ ! -x "$ACT" ]; then
+    json_err false 10 "dispatch" "avp-action.sh not found" >"$tmp"
+    write_last "$tmp"
+    log "event=avp_webui_restart action=$action rc=10 msg=avp-action.sh not found"
+    rm -f "$tmp" "$tmp_err" 2>/dev/null || true
+    return 10
+  fi
+
+  # run action (stdout json)
+  "$ACT" $argv >"$tmp" 2>"$tmp_err"
+  rc=$?
+
+  # if stdout isn't JSON, synthesize an error JSON
+  first="$(head -n 1 "$tmp" 2>/dev/null || true)"
+  case "$first" in
+    \{*\}) : ;;
+    *)
+      emsg="$(tail -n 1 "$tmp_err" 2>/dev/null | head -c 160)"
+      [ -z "${emsg:-}" ] && emsg="no-json-from-avp-action"
+      json_err false "$rc" "$action" "$emsg" >"$tmp"
+      ;;
+  esac
+
+  write_last "$tmp" || true
+  log "event=avp_webui_restart action=$action rc=$rc argv=[$argv]"
+  rm -f "$tmp" "$tmp_err" 2>/dev/null || true
+  return "$rc"
+}
+
+main() {
+  ev="${1:-}"
+  [ -n "${ev:-}" ] || exit 0
+
+  case "$ev" in
+    avp_webui_restart)
+      action="$(nvram get avp_webui_action 2>/dev/null || true)"
+      token="$(nvram get avp_webui_token 2>/dev/null || true)"
+      profile="$(nvram get avp_webui_profile 2>/dev/null || true)"
+      device="$(nvram get avp_webui_device 2>/dev/null || true)"
+      payload="$(nvram get avp_webui_payload 2>/dev/null || true)"
+
+      action="$(trim "$action")"
+      token="$(trim "$token")"
+      profile="$(trim "$profile")"
+      device="$(trim "$device")"
+      payload="$(trim "$payload")"
+
+      [ -n "${action:-}" ] || action="status"
+
+      run_action "$action" "$token" "$profile" "$device" "$payload"
+      exit $?
+      ;;
+    *)
+      # ignore other events to avoid regressions
+      exit 0
+      ;;
+  esac
+}
+
+main "$@"
