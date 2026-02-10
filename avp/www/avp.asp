@@ -5,11 +5,20 @@ AutoVPN Platform (AVP)
 Component : AVP-WEBUI (ASP)
 File      : avp.asp
 Role      : WebUI frontend (router user page)
-Version   : v1.0.14 (2026-02-09)
+Version   : v1.0.18 (2026-02-10)
 Status    : stable
 =============================================================
 
 CHANGELOG
+- v1.0.18 (2026-02-10)
+  * FIX: auto-refresh default (5s) + persist in localStorage (avp_auto) without breaking guards
+- v1.0.17 (2026-02-10)
+  * FIX: defensivo contra DOM ausente (evita crash e regressão de auto-refresh)
+- v1.0.16 (2026-02-10)
+  * FIX: restore <span id="last"> in header card (avoid JS null crash) — WebUI v1.0.15 hotfix
+- v1.0.15 (2026-02-10)
+  * ADD: WebUI Console (apply.cgi) + last action box (/user/avp-action-last.json) + toast
+  * ADD: Console actions: toggle enable/disable, reload, snapshot, dhcp_refresh (normal/aggressive), profile list/get/set, device list/add/remove/update
 - v1.0.14 (2026-02-09)
   * FIX: toolbar Order/Auto-refresh (rebuild HTML; restore options/labels) + keep default devices.conf order
 - v1.0.13 (2026-02-09)
@@ -51,10 +60,41 @@ CHANGELOG
     pre { background:#f6f6f6; border:1px solid #ddd; border-radius:8px; padding:10px; overflow:auto; }
     .pill { display:inline-block; border:1px solid #aaa; border-radius:999px; padding:2px 10px; background:#fafafa; }
     code { background:#f6f6f6; padding:2px 6px; border-radius:6px; }
+
+/* C2: Toast */
+#toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  display: none;
+  max-width: 520px;
+  border: 1px solid #444;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #111;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(0,0,0,.25);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#toast.ok{ border-color:#1b7f1b; }
+#toast.warn{ border-color:#c77700; }
+#toast.bad{ border-color:#b00020; }
+
+/* C2: Console */
+.consoleGrid { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+.consoleGrid .card { min-width: 360px; }
+.consoleRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.consoleRow label { display:flex; gap:6px; align-items:center; }
+.consoleRow input[type="text"], .consoleRow select { padding:4px 6px; border:1px solid #aaa; border-radius:6px; }
+.mini { font-size:12px; opacity:.85; }
   </style>
 </head>
 <body>
-  <h2>AVP — AutoVPN Platform <span class="pill" id="ver">WebUI v1.0.8</span></h2>
+  <h2>AVP — AutoVPN Platform <span class="pill" id="ver">WebUI v1.0.17</span></h2>
 
   <div class="row">
     <div class="card">
@@ -113,6 +153,70 @@ CHANGELOG
     </div>
   </div>
 
+<!-- C2: Console + Last Action -->
+<div class="consoleGrid" style="margin-top:12px;">
+  <div class="card">
+    <div><b>Console</b> <span class="muted">(apply.cgi)</span></div>
+
+    <div class="consoleRow" style="margin-top:10px;">
+      <button class="btn" id="btnSnap">snapshot</button>
+      <button class="btn" id="btnReload">reload</button>
+      <button class="btn" id="btnToggle">toggle</button>
+    </div>
+
+    <div class="consoleRow" style="margin-top:10px;">
+      <label class="muted">DHCP refresh
+        <select id="dhcpMode">
+          <option value="dhcp_refresh">normal</option>
+          <option value="dhcp_refresh_aggr">aggressive</option>
+        </select>
+      </label>
+      <button class="btn" id="btnDhcp">run</button>
+    </div>
+
+    <div class="consoleRow" style="margin-top:10px;">
+      <label class="muted">Profile</label>
+      <select id="profileSel">
+        <option value="" selected>(not loaded)</option>
+      </select>
+      <button class="btn" id="btnProfileList">list</button>
+      <button class="btn" id="btnProfileGet">get</button>
+      <button class="btn" id="btnProfileSet">set</button>
+    </div>
+
+    <div class="consoleRow" style="margin-top:10px;">
+      <label class="muted">Device key</label>
+      <input type="text" id="devKey" placeholder="label/ip/mac (key)" size="22">
+      <label class="muted">payload</label>
+      <input type="text" id="devPayload" placeholder="optional payload" size="22">
+      <button class="btn" id="btnDevList">list</button>
+      <button class="btn" id="btnDevAdd">add</button>
+      <button class="btn" id="btnDevRemove">remove</button>
+      <button class="btn" id="btnDevUpdate">update</button>
+    </div>
+
+    <div class="consoleRow" style="margin-top:10px;">
+      <label class="muted">Token</label>
+      <input type="text" id="token" placeholder="(auto)" size="34">
+      <button class="btn" id="btnTokenGet">get</button>
+      <button class="btn" id="btnTokenClear">clear</button>
+    </div>
+
+    <div class="mini muted" style="margin-top:10px;">
+      Last action endpoint: <code>/user/avp-action-last.json</code>
+    </div>
+  </div>
+
+  <div class="card" style="flex:1; min-width:420px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div><b>Last action</b></div>
+      <span class="pill" id="actState" style="font-size:12px;">idle</span>
+    </div>
+    <pre id="lastAction" style="margin-top:10px;">(no data)</pre>
+  </div>
+</div>
+
+
   <div id="errorsBox" style="display:none; margin-top:12px;">
     <div class="card">
       <div class="bad"><b>Errors</b></div>
@@ -141,7 +245,7 @@ CHANGELOG
   const $ = (id)=>document.getElementById(id);
   let timer = null;
 
-  const WEBUI_VER = "v1.0.14";
+  const WEBUI_VER = "v1.0.18";
   if ($("ver")) $("ver").textContent = "WebUI " + WEBUI_VER;
 
 
@@ -150,6 +254,150 @@ CHANGELOG
 
   // guarda o JSON bruto pra "Copy JSON"
   let lastRawJson = "";
+
+// C2: Action plumbing (apply.cgi + last action json)
+const LAST_ACTION = "/user/avp-action-last.json";
+let lastStatusEnabled = null;
+let lastActionTs = null;
+
+function toast(msg, level){
+  const el = $("toast");
+  if (!el) return;
+  el.classList.remove("ok","warn","bad");
+  level = level || "ok";
+  el.classList.add(level);
+  el.textContent = String(msg || "");
+  el.style.display = "";
+  setTimeout(function(){ try{ el.style.display="none"; }catch(_){} }, 2600);
+}
+
+function syncTokenUi(){
+  const t = localStorage.getItem("avp_token") || "";
+  if ($("token")) $("token").value = t;
+}
+
+async function loadLastAction(forceToast){
+  try{
+    const u = LAST_ACTION + "?_=" + Date.now();
+    const r = await fetch(u, { cache: "no-store" });
+    const txt = await r.text();
+
+    if ((txt || "").trim().startsWith("<")) throw new Error("Not authenticated (login required)");
+    const j = JSON.parse(txt);
+
+    if ($("lastAction")) $("lastAction").textContent = JSON.stringify(j, null, 2);
+
+    // state pill + optional toast
+    const ok = (j && j.ok === true);
+    const rc = (j && typeof j.rc === "number") ? j.rc : null;
+    const ts = (j && typeof j.ts === "number") ? j.ts : null;
+
+    if (ts !== null) lastActionTs = ts;
+
+    const st = ok ? "ok" : "fail";
+    if ($("actState")) $("actState").textContent = st;
+
+    if (forceToast){
+      if (ok) toast("OK: " + (j.action || "action"), "ok");
+      else toast("FAIL: " + (j.msg || "error") + (rc !== null ? (" (rc=" + rc + ")") : ""), "bad");
+    }
+
+    // Profiles: update select when response carries list
+    if (j && j.data && Array.isArray(j.data.profiles) && $("profileSel")){
+      const sel = $("profileSel");
+      sel.innerHTML = "";
+      for (const p of j.data.profiles){
+        const opt = document.createElement("option");
+        opt.value = String(p);
+        opt.textContent = String(p);
+        sel.appendChild(opt);
+      }
+    }
+
+    // Token: store when response carries token
+    if (j && j.data && j.data.token){
+      localStorage.setItem("avp_token", String(j.data.token));
+      syncTokenUi();
+    }
+
+    return j;
+  }catch(e){
+    if ($("lastAction")) $("lastAction").textContent = "(no data)";
+    if ($("actState")) $("actState").textContent = "idle";
+    return null;
+  }
+}
+
+function postApply(params){
+  const fd = new URLSearchParams();
+  fd.set("current_page", "user/avp.asp");
+  fd.set("next_page", "user/avp.asp");
+  fd.set("action_mode", "apply");
+  fd.set("action_script", "");
+  fd.set("rc_service", "avp_webui_restart");
+
+  for (const k in (params||{})){
+    if (!Object.prototype.hasOwnProperty.call(params,k)) continue;
+    fd.set(k, String(params[k]));
+  }
+
+  return fetch("/apply.cgi", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: fd.toString()
+  });
+}
+
+async function doAction(action, extra){
+  extra = extra || {};
+  extra.avp_webui_action = action;
+
+  // token: keep in localStorage + UI
+  const t = localStorage.getItem("avp_token") || "";
+  if (t && !extra.avp_webui_token) extra.avp_webui_token = t;
+
+  try{
+    if ($("actState")) $("actState").textContent = "busy";
+    await postApply(extra);
+
+    // backend is async: poll last.json until ts changes (or timeout)
+    let tries = 0;
+    const max = 10;
+    const prevTs = lastActionTs;
+
+    const poll = setInterval(async function(){
+      tries++;
+      const j = await loadLastAction(false);
+      const curTs = j && typeof j.ts === "number" ? j.ts : null;
+
+      if (curTs !== null && prevTs !== null && curTs !== prevTs){
+        clearInterval(poll);
+        if ($("actState")) $("actState").textContent = "idle";
+        await loadLastAction(true);
+        return;
+      }
+
+      // first successful read after action => toast once
+      if (prevTs === null && curTs !== null){
+        clearInterval(poll);
+        if ($("actState")) $("actState").textContent = "idle";
+        await loadLastAction(true);
+        return;
+      }
+
+      if (tries >= max){
+        clearInterval(poll);
+        if ($("actState")) $("actState").textContent = "idle";
+        await loadLastAction(true);
+      }
+    }, 450);
+
+  }catch(e){
+    toast("apply.cgi failed: " + (e && e.message ? e.message : String(e)), "bad");
+    if ($("actState")) $("actState").textContent = "idle";
+  }
+}
+
 
   function escapeHtml(s){
     s = (s === null || s === undefined) ? "" : String(s);
@@ -230,27 +478,34 @@ CHANGELOG
       if (fe){
         const ageSec = Math.max(0, Math.floor(Date.now()/1000 - fe));
         const lastTxt = fmtEpoch(fe);
-        if (lastTxt) $("last").textContent = lastTxt;
+        {
+        const lastEl = $("last");
+        if (lastEl && lastTxt) lastEl.textContent = lastTxt;
         const ageEl = $("age");
-        ageEl.textContent = fmtAgeSec(ageSec) + " ago";
-        // thresholds: <20s ok, 20-59s warn, >=60s bad
-        const cls = (ageSec >= 60) ? "bad" : (ageSec >= 20 ? "warn" : "ok");
-        // classList-safe: não apaga outras classes do elemento
-        ageEl.classList.remove("ok","warn","bad");
-        ageEl.classList.add(cls);
+        if (ageEl){
+          ageEl.textContent = fmtAgeSec(ageSec) + " ago";
+          // thresholds: <20s ok, 20-59s warn, >=60s bad
+          const cls = (ageSec >= 60) ? "bad" : (ageSec >= 20 ? "warn" : "ok");
+          // classList-safe: não apaga outras classes do elemento
+          ageEl.classList.remove("ok","warn","bad");
+          ageEl.classList.add(cls);
+        }
       }
-      $("enabled").innerHTML = (j.enabled === 1) ? '<span class="ok">enabled</span>' : '<span class="bad">disabled</span>';
-      $("profile").textContent = j.profile || "n/a";
-      if (!fe) $("last").textContent = new Date().toLocaleString();
+      }
+      if ($("enabled")) $("enabled").innerHTML = (j.enabled === 1) ? '<span class="ok">enabled</span>' : '<span class="bad">disabled</span>';
+      lastStatusEnabled = (j.enabled === 1);
+      if ($("profile")) $("profile").textContent = j.profile || "n/a";
+      if (!fe && $("last")) if ($("last")) $("last").textContent = new Date().toLocaleString();
 
       if (j.errors && j.errors.length){
-        $("errorsBox").style.display = "";
-        $("errors").textContent = JSON.stringify(j.errors, null, 2);
+        if ($("errorsBox")) if ($("errorsBox")) $("errorsBox").style.display = "";
+        if ($("errors")) $("errors").textContent = JSON.stringify(j.errors, null, 2);
       } else {
-        $("errorsBox").style.display = "none";
+        if ($("errorsBox")) $("errorsBox").style.display = "none";
       }
 
       const tb = $("tbody");
+      if (!tb) return;
       tb.innerHTML = "";
 
       let devs = (j.devices || []);
@@ -299,15 +554,16 @@ CHANGELOG
         tb.appendChild(tr);
       }
     }catch(e){
-      $("enabled").innerHTML = '<span class="bad">error</span>';
-      $("profile").textContent = "n/a";
-      $("last").textContent = new Date().toLocaleString();
+      if ($("enabled")) $("enabled").innerHTML = '<span class="bad">error</span>';
+      if ($("profile")) $("profile").textContent = "n/a";
+      if ($("last")) $("last").textContent = new Date().toLocaleString();
       if ($("age")) $("age").textContent = "n/a";
 
-      $("errorsBox").style.display = "";
-      $("errors").textContent = "Fetch/parse error: " + (e && e.message ? e.message : String(e));
+      if ($("errorsBox")) if ($("errorsBox")) $("errorsBox").style.display = "";
+      if ($("errors")) $("errors").textContent = "Fetch/parse error: " + (e && e.message ? e.message : String(e));
 
       const tb = $("tbody");
+      if (!tb) return;
       tb.innerHTML = '<tr><td colspan="6" class="bad">Failed to load JSON from /user/avp-status.json</td></tr>';
     }
   }
@@ -409,7 +665,12 @@ CHANGELOG
   }
   $("btnRefresh").addEventListener("click", load);
   if ($("auto")){
+    const k = "avp_auto";
+    let v = localStorage.getItem(k);
+    if (v === null || v === ""){ v = "5"; localStorage.setItem(k, v); }
+    $("auto").value = v;
     $("auto").addEventListener("change", function(){
+      localStorage.setItem(k, this.value || "0");
       setAuto(parseInt(this.value, 10) || 0);
     });
   }
@@ -430,10 +691,70 @@ CHANGELOG
     if (document.visibilityState === "visible") load();
   });
 
+
+// C2: Console handlers
+if ($("btnSnap"))   $("btnSnap").addEventListener("click", function(){ doAction("snapshot"); });
+if ($("btnReload")) $("btnReload").addEventListener("click", function(){ doAction("reload"); });
+
+if ($("btnToggle")) $("btnToggle").addEventListener("click", function(){
+  const act = (lastStatusEnabled === true) ? "disable" : "enable";
+  doAction(act);
+});
+
+if ($("btnDhcp")) $("btnDhcp").addEventListener("click", function(){
+  const m = $("dhcpMode") ? $("dhcpMode").value : "dhcp_refresh";
+  doAction(m);
+});
+
+if ($("btnProfileList")) $("btnProfileList").addEventListener("click", function(){ doAction("profile_list"); });
+
+if ($("btnProfileGet")) $("btnProfileGet").addEventListener("click", function(){
+  const p = $("profileSel") ? $("profileSel").value : "";
+  doAction("profile_get", { avp_webui_profile: p });
+});
+
+if ($("btnProfileSet")) $("btnProfileSet").addEventListener("click", function(){
+  const p = $("profileSel") ? $("profileSel").value : "";
+  doAction("profile_set", { avp_webui_profile: p });
+});
+
+if ($("btnDevList")) $("btnDevList").addEventListener("click", function(){ doAction("device_list"); });
+
+if ($("btnDevAdd")) $("btnDevAdd").addEventListener("click", function(){
+  const k = $("devKey") ? $("devKey").value : "";
+  const p = $("devPayload") ? $("devPayload").value : "";
+  doAction("device_add", { avp_webui_device: k, avp_webui_payload: p });
+});
+
+if ($("btnDevRemove")) $("btnDevRemove").addEventListener("click", function(){
+  const k = $("devKey") ? $("devKey").value : "";
+  doAction("device_remove", { avp_webui_device: k });
+});
+
+if ($("btnDevUpdate")) $("btnDevUpdate").addEventListener("click", function(){
+  const k = $("devKey") ? $("devKey").value : "";
+  const p = $("devPayload") ? $("devPayload").value : "";
+  doAction("device_update", { avp_webui_device: k, avp_webui_payload: p });
+});
+
+if ($("btnTokenGet")) $("btnTokenGet").addEventListener("click", function(){ doAction("token_get"); });
+
+if ($("btnTokenClear")) $("btnTokenClear").addEventListener("click", function(){
+  localStorage.removeItem("avp_token");
+  syncTokenUi();
+  toast("Token cleared", "warn");
+});
+
+// C2: keep last action fresh (light)
+syncTokenUi();
+loadLastAction(false);
+setInterval(function(){ if (document.visibilityState === "visible") loadLastAction(false); }, 2500);
+
   // init
   load();
-  setAuto(parseInt($("auto").value, 10) || 0);
+  setAuto(parseInt(($("auto") ? $("auto").value : "0"), 10) || 0);
 })();
 </script>
+  <div id="toast"></div>
 </body>
 </html>
