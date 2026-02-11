@@ -4,11 +4,13 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.21 (2026-02-10)
+# Version   : v1.0.22 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.22 (2026-02-10)
+#   * HARDEN: emit_error detecta log_error mesmo sem has_fn (fallback silencioso)
 # - v1.0.21 (2026-02-10)
 #   * POLISH: remove mkdir -p redundante (LOGDIR)
 #   * POLISH: emit_error usa has_fn log_error + detail arg
@@ -64,7 +66,7 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.21"
+SCRIPT_VER="v1.0.22"
 set -u
 
 SELF_VER="$SCRIPT_VER"
@@ -79,7 +81,7 @@ has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
 emit_error(){
   _rc="$1"
   _msg="$2"
-  if has_fn log_error >/dev/null 2>&1; then
+  if { type has_fn >/dev/null 2>&1 && has_fn log_error; } || type log_error >/dev/null 2>&1; then
     log_error "AVP-POL-CRON" "$_msg" "$_rc" "stage=emit_error"
     return 0
   fi
