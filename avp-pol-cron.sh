@@ -4,11 +4,15 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.19 (2026-02-10)
+# Version   : v1.0.20 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.20 (2026-02-10)
+#   * CHORE: remove restos ### INJECT_*
+#   * HARDEN: emit_error sem clobber de variáveis globais (rc/msg)
+#   * POLISH: SKIP rc=99 log usa SELF_VER
 # - v1.0.19 (2026-02-10)
 #   * FIX: tratar rc=99 (lock_active) como SKIP (rc=0) antes do END/failure_dump/emit_error
 # - v1.0.18 (2026-02-10)
@@ -57,7 +61,7 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.19"
+SCRIPT_VER="v1.0.20"
 set -u
 
 SELF_VER="$SCRIPT_VER"
@@ -70,20 +74,20 @@ type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
 has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
 
 emit_error(){
-  rc="$1"
-  msg="$2"
+  _rc="$1"
+  _msg="$2"
   if type log_error >/dev/null 2>&1; then
-    log_error "AVP-POL-CRON" "$msg" "$rc"
+    log_error "AVP-POL-CRON" "$_msg" "$_rc"
     return 0
   fi
 
-  tsn="$(date +%s)"
-  errd="/jffs/scripts/logs"
-  errf="$errd/avp_errors.log"
-  [ -d "$errd" ] || mkdir -p "$errd" 2>/dev/null || :
-  line="{\"ts\":\"$tsn\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$msg\",\"rc\":$rc}"
-  if ! echo "$line" >>"$errf" 2>/dev/null; then
-    echo "$line" >>"/tmp/avp_errors.log" 2>/dev/null || :
+  _tsn="$(date +%s)"
+  _errd="/jffs/scripts/logs"
+  _errf="$_errd/avp_errors.log"
+  [ -d "$_errd" ] || mkdir -p "$_errd" 2>/dev/null || :
+  _line="{\"ts\":\"$_tsn\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$_msg\",\"rc\":$_rc}"
+  if ! echo "$_line" >>"$_errf" 2>/dev/null; then
+    echo "$_line" >>"/tmp/avp_errors.log" 2>/dev/null || :
   fi
 }
 
@@ -114,7 +118,7 @@ else
   rc=$?
   # rc=99 (lock_active) => SKIP (nao é falha; evita ruido no cron)
   if [ "${rc:-0}" -eq 99 ] 2>/dev/null; then
-    echo "$(ts) [CRON] AVP-POL-CRON ${SELF_VER:-$SCRIPT_VER} SKIP rc=99 (lock_active)" >>"$LOG"
+    echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER SKIP rc=99 (lock_active)" >>"$LOG"
     rc=0
   fi
 fi
@@ -136,6 +140,3 @@ if [ "$rc" -ne 0 ]; then
   emit_error "$rc" "policy_apply_failed"
 fi
 exit "$rc"
-### INJECT_WARN: restore after avp-lib not inserted (pattern mismatch)
-### INJECT_FAIL: could not patch rc=99 skip block
-### INJECT_FAIL: rc=$? not found
