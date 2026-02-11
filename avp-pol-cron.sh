@@ -4,11 +4,14 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.16 (2026-02-10)
+# Version   : v1.0.17 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.17 (2026-02-10)
+#   * FIX: STRICT_ORDER (set -u logo abaixo do SCRIPT_VER)
+#   * FEAT: rc=99 (lock_active) vira SKIP (treat as rc=0) no cron
 # - v1.0.16 (2026-02-10)
 #   * FIX: evitar clobber do SCRIPT_VER pelo avp-lib (SELF_VER + restore) e logar versão correta
 # - v1.0.15 (2026-02-10)
@@ -50,11 +53,12 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.16"
+SCRIPT_VER="v1.0.17"
+set -u
+
 SELF_VER="$SCRIPT_VER"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
-set -u
 
 AVP_LIB="/jffs/scripts/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
@@ -124,3 +128,4 @@ if [ "$rc" -ne 0 ]; then
 fi
 exit "$rc"
 ### INJECT_WARN: restore after avp-lib not inserted (pattern mismatch)
+### INJECT_FAIL: could not patch rc=99 skip block
