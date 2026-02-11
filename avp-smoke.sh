@@ -4,11 +4,13 @@
 # Component : AVP-SMOKE
 # File      : avp-smoke.sh
 # Role      : Pre/Post/Hotfix gates (baseline + patch-safety + syntax + JSON probes + WebUI ASP gate)
-# Version   : v1.4.9 (2026-02-08)
+# Version   : v1.4.11 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.4.11 (2026-02-10)
+#   * FIX: alinhar SCRIPT_VER ao estado atual (inclui gates monotonic/targets)
 # - v1.4.9 (2026-02-08)
 #   * FIX: BASHISM gate nao reprova local (busybox ash); continua bloqueando declare/typeset/function/source
 # - v1.4.8 (2026-01-26)
@@ -112,7 +114,7 @@
 #   * ADD: initial release
 # =============================================================
 
-SCRIPT_VER="v1.4.9"
+SCRIPT_VER="v1.4.11"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
