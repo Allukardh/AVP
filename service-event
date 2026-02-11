@@ -4,11 +4,13 @@
 # Component : AVP-WEBUI
 # File      : service-event
 # Role      : Firmware hook for WebUI Console actions (rc_service -> avp-action.sh)
-# Version   : v1.0.2 (2026-02-10)
+# Version   : v1.0.3 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.3 (2026-02-10)
+#   * FIX: ensure monotonic ts in last.json (avoid same-second actions breaking UI polling)
 # - v1.0.2 (2026-02-10)
 #   * FIX: accept Merlin service-event args (event=start/stop/restart, target=svc) and also restart_svc form
 #   * ADD: log argv + normalized event/target for observability
@@ -21,7 +23,7 @@
 #   * ADD: alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
 # =============================================================
 
-SCRIPT_VER="v1.0.2"
+SCRIPT_VER="v1.0.3"
 
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 export GIT_PAGER=cat PAGER=cat
@@ -111,6 +113,27 @@ parse_device_contract() {
   printf 'label=%s ip=%s rule=%s\n' "$label" "$ip" "$rule"
 }
 
+
+ensure_monotonic_ts() {
+  tmpf="${1:-}"
+  [ -n "${tmpf:-}" ] || return 1
+  [ -f "$LAST_WWW" ] || return 0
+
+  old_ts="$(sed -n "s/.*\"ts\":\([0-9][0-9]*\).*/\1/p" "$LAST_WWW" 2>/dev/null | head -n 1)"
+  new_ts="$(sed -n "s/.*\"ts\":\([0-9][0-9]*\).*/\1/p" "$tmpf" 2>/dev/null | head -n 1)"
+
+  case "${old_ts:-}" in ""|*[!0-9]*) old_ts=0;; esac
+  case "${new_ts:-}" in ""|*[!0-9]*) new_ts=$(ts_s);; esac
+
+  if [ "$new_ts" -le "$old_ts" ]; then
+    new_ts=$((old_ts + 1))
+  fi
+
+  # rewrite ts in JSON (keep contract: integer seconds)
+  sed "s/\"ts\":[0-9][0-9]*/\"ts\":${new_ts}/" "$tmpf" >"${tmpf}.t" 2>/dev/null && mv -f "${tmpf}.t" "$tmpf" || true
+  return 0
+}
+
 run_action() {
   action="$(trim "${1:-}")"
   token="$(trim "${2:-}")"
@@ -180,6 +203,7 @@ run_action() {
       ;;
   esac
 
+  ensure_monotonic_ts "$tmp" || true
   write_last "$tmp" || true
   log "event=avp_webui_restart action=$action rc=$rc argv=[$argv]"
   rm -f "$tmp" "$tmp_err" 2>/dev/null || true
