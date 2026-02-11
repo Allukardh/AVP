@@ -4,11 +4,15 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.14 (2026-02-09)
+# Version   : v1.0.15 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.15 (2026-02-10)
+#   * FIX: START log volta a incluir pid=$$ (wrapper visível no cron)
+#   * HARDEN: guard se /jffs/scripts/avp-pol.sh ausente (rc=127 + log)
+#   * HARDEN: emit_error fallback para /tmp se /jffs/scripts/logs nao gravavel
 # - v1.0.14 (2026-02-09)
 #   * FIX: emit_error usa log_error (avp-lib); remove JSON manual em avp_errors.log
 # - v1.0.13 (2026-01-27)
@@ -44,7 +48,7 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.14"
+SCRIPT_VER="v1.0.15"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -60,9 +64,16 @@ emit_error(){
   msg="$2"
   if type log_error >/dev/null 2>&1; then
     log_error "AVP-POL-CRON" "$msg" "$rc"
-  else
-    tsn="$(date +%s)"
-    echo "{\"ts\":\"$tsn\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$msg\",\"rc\":$rc}" >> /jffs/scripts/logs/avp_errors.log
+    return 0
+  fi
+
+  tsn="$(date +%s)"
+  errd="/jffs/scripts/logs"
+  errf="$errd/avp_errors.log"
+  [ -d "$errd" ] || mkdir -p "$errd" 2>/dev/null || :
+  line="{\"ts\":\"$tsn\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$msg\",\"rc\":$rc}"
+  if ! echo "$line" >>"$errf" 2>/dev/null; then
+    echo "$line" >>"/tmp/avp_errors.log" 2>/dev/null || :
   fi
 }
 
@@ -83,9 +94,15 @@ mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2
 mkdir -p "$LOGDIR" 2>/dev/null || :
 LOG="$LOGDIR/avp-pol-cron.log"
 rotate_if_big "$LOG"
-echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER START" >>"$LOG"
-/bin/sh /jffs/scripts/avp-pol.sh run >>"$LOG" 2>&1
-rc=$?
+echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER START pid=$$" >>"$LOG"
+POL="/jffs/scripts/avp-pol.sh"
+if [ ! -f "$POL" ]; then
+  echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER ERR missing $POL" >>"$LOG"
+  rc=127
+else
+  /bin/sh "$POL" run >>"$LOG" 2>&1
+  rc=$?
+fi
 echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER END rc=$rc" >>"$LOG"
 if [ "$rc" -ne 0 ]; then
   if has_fn log_error; then
