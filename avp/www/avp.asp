@@ -257,23 +257,44 @@ CHANGELOG
 
 // C2: Action plumbing (apply.cgi + last action json)
 
-function getToken(){
-  try{
-    const el = document.getElementById("token");
-    const v1 = el && el.value ? String(el.value).trim() : "";
-    if (v1) return v1;
-    const v2 = localStorage.getItem("avp_webui_token") || "";
-    return String(v2).trim();
-  }catch(e){ return ""; }
-}
-function setToken(t){
-  try{
-    const v = (t?String(t):"").trim();
-    const el = document.getElementById("token");
-    if (el) el.value = v;
-    if (v) localStorage.setItem("avp_webui_token", v);
-  }catch(e){}
-}
+  const TOKEN_KEY = "avp_webui_token";
+
+  function getToken(){
+    try{
+      const el = document.getElementById("token");
+      const v1 = el && el.value ? String(el.value).trim() : "";
+      if (v1) return v1;
+      const v2 = localStorage.getItem(TOKEN_KEY) || "";
+      return String(v2).trim();
+    }catch(e){ return ""; }
+  }
+
+  function setToken(t){
+    try{
+      const v = (t ? String(t) : "").trim();
+      const el = document.getElementById("token");
+      if (el) el.value = v;
+      if (v){
+        localStorage.setItem(TOKEN_KEY, v);
+        // compat: se existir código antigo lendo avp_token, mantém também
+        localStorage.setItem("avp_token", v);
+      }
+    }catch(e){}
+  }
+
+  async function syncTokenFromLast(){
+    try{
+      const u = "/user/avp-action-last.json?_ts=" + Date.now();
+      const r = await fetch(u, { cache: "no-store" });
+      if (!r || !r.ok) return;
+      const j = await r.json();
+      if (j && j.ok && j.action === "token_get" && j.data && j.data.token){
+        setToken(j.data.token);
+      }
+    }catch(e){}
+  }
+
+
 const LAST_ACTION = "/user/avp-action-last.json";
 let lastStatusEnabled = null;
 let lastActionTs = null;
@@ -385,6 +406,7 @@ async function doAction(action, extra){
   try{
     if ($("actState")) $("actState").textContent = "busy";
     await postApply(extra);
+      try{ syncTokenFromLast(); }catch(e){};
 
     // backend is async: poll last.json until ts changes (or timeout)
     let tries = 0;
