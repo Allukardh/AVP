@@ -4,11 +4,13 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.15 (2026-02-10)
+# Version   : v1.0.16 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.16 (2026-02-10)
+#   * FIX: evitar clobber do SCRIPT_VER pelo avp-lib (SELF_VER + restore) e logar versão correta
 # - v1.0.15 (2026-02-10)
 #   * FIX: START log volta a incluir pid=$$ (wrapper visível no cron)
 #   * HARDEN: guard se /jffs/scripts/avp-pol.sh ausente (rc=127 + log)
@@ -48,11 +50,11 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.15"
+SCRIPT_VER="v1.0.16"
+SELF_VER="$SCRIPT_VER"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
-
 
 AVP_LIB="/jffs/scripts/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
@@ -94,16 +96,16 @@ mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2
 mkdir -p "$LOGDIR" 2>/dev/null || :
 LOG="$LOGDIR/avp-pol-cron.log"
 rotate_if_big "$LOG"
-echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER START pid=$$" >>"$LOG"
+echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER START pid=$$" >>"$LOG"
 POL="/jffs/scripts/avp-pol.sh"
 if [ ! -f "$POL" ]; then
-  echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER ERR missing $POL" >>"$LOG"
+  echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER ERR missing $POL" >>"$LOG"
   rc=127
 else
   /bin/sh "$POL" run >>"$LOG" 2>&1
   rc=$?
 fi
-echo "$(ts) [CRON] AVP-POL-CRON $SCRIPT_VER END rc=$rc" >>"$LOG"
+echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER END rc=$rc" >>"$LOG"
 if [ "$rc" -ne 0 ]; then
   if has_fn log_error; then
     log_error "CRON" "avp-pol.sh failed" "$rc" "log=$LOG"
@@ -121,3 +123,4 @@ if [ "$rc" -ne 0 ]; then
   emit_error "$rc" "policy_apply_failed"
 fi
 exit "$rc"
+### INJECT_WARN: restore after avp-lib not inserted (pattern mismatch)
