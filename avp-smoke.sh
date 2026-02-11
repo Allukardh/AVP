@@ -805,6 +805,17 @@ fi
 log "PATH=$PATH"
 have_git || warn "git nao encontrado via binscan"
 have_jq  || warn "jq nao encontrado via binscan (ok, mas gates JSON ficam mais fracos)"
+  # --- EXTRA: ensure service-event appears in printed TARGETS ---
+  # TARGETS is built dynamically; keep stable visibility in logs
+  if printf " %s " "$TARGETS" | grep -q " post-mount "; then
+    if ! printf " %s " "$TARGETS" | grep -q " service-event "; then
+      TARGETS=$(printf "%s" "$TARGETS" | sed "s/post-mount/post-mount service-event/")
+    fi
+  else
+    if ! printf " %s " "$TARGETS" | grep -q " service-event "; then
+      TARGETS="$TARGETS service-event"
+    fi
+  fi
 log "TARGETS=$TARGETS"
 
 case "$MODE" in
