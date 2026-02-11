@@ -844,6 +844,13 @@ case "$MODE" in
     esac
 
     echo " $TARGETS " | grep -q " avp/www/avp.asp " && gate_webui_asp "avp/www/avp.asp" || true
+  # --- EXTRA GATE: service-event (exists + exec + syntax) ---
+  if [ -f "./service-event" ]; then
+    [ -x "./service-event" ] || { echo "[SMOKE] ERR: service-event nao e executavel"; return 1; }
+    sh -n "./service-event" >/dev/null 2>&1 || { echo "[SMOKE] ERR: sh -n falhou em service-event"; return 1; }
+  else
+    echo "[SMOKE] WARN: service-event ausente (baseline antigo ok)"
+  fi
     log "OK: --pre (baseline limpo + patch-check opcional + sintaxe + probes best-effort + ASP gate)"
     ;;
 
@@ -925,6 +932,33 @@ case "$MODE" in
     esac
 
     echo " $TARGETS " | grep -q " avp/www/avp.asp " && gate_webui_asp "avp/www/avp.asp" || true
+  # --- EXTRA GATE: service-event (must exist) ---
+  [ -f "./service-event" ] || { echo "[SMOKE] ERR: service-event ausente"; return 1; }
+  [ -x "./service-event" ] || { echo "[SMOKE] ERR: service-event nao e executavel"; return 1; }
+  sh -n "./service-event" >/dev/null 2>&1 || { echo "[SMOKE] ERR: sh -n falhou em service-event"; return 1; }
+
+  # --- EXTRA GATE: last.json ts monotonic (entre rodadas do smoke) ---
+  LAST="/www/user/avp-action-last.json"
+  STT="/tmp/avp_smoke_lastjson_ts.state"
+  cur_ts=""
+  if [ -f "$LAST" ]; then
+    cur_ts="$(sed -n "s/.*\"ts\":\([0-9][0-9]*\).*/\1/p" "$LAST" | head -n 1)"
+    printf "%s" "$cur_ts" | grep -Eq "^[0-9]+$" || cur_ts=""
+  fi
+  if [ -n "$cur_ts" ]; then
+    prev_ts=""
+    if [ -f "$STT" ]; then
+      prev_ts="$(head -n 1 "$STT" 2>/dev/null)"
+      printf "%s" "$prev_ts" | grep -Eq "^[0-9]+$" || prev_ts=""
+    fi
+    if [ -n "$prev_ts" ] && [ "$cur_ts" -lt "$prev_ts" ]; then
+      echo "[SMOKE] ERR: last.json ts regrediu (cur=$cur_ts < prev=$prev_ts)"
+      return 1
+    fi
+    echo "$cur_ts" >"$STT" 2>/dev/null || true
+  else
+    echo "[SMOKE] WARN: last.json sem ts parseavel (skip monotonic)"
+  fi
     log "OK: --post (diff --check + patch-check opcional + sintaxe + probes best-effort + ASP gate)"
     ;;
 
