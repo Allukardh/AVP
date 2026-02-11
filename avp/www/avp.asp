@@ -256,6 +256,24 @@ CHANGELOG
   let lastRawJson = "";
 
 // C2: Action plumbing (apply.cgi + last action json)
+
+function getToken(){
+  try{
+    const el = document.getElementById("token");
+    const v1 = el && el.value ? String(el.value).trim() : "";
+    if (v1) return v1;
+    const v2 = localStorage.getItem("avp_webui_token") || "";
+    return String(v2).trim();
+  }catch(e){ return ""; }
+}
+function setToken(t){
+  try{
+    const v = (t?String(t):"").trim();
+    const el = document.getElementById("token");
+    if (el) el.value = v;
+    if (v) localStorage.setItem("avp_webui_token", v);
+  }catch(e){}
+}
 const LAST_ACTION = "/user/avp-action-last.json";
 let lastStatusEnabled = null;
 let lastActionTs = null;
@@ -317,6 +335,8 @@ async function loadLastAction(forceToast){
     // Token: store when response carries token
     if (j && j.data && j.data.token){
       localStorage.setItem("avp_token", String(j.data.token));
+        setToken(data.token);
+
       syncTokenUi();
     }
 
@@ -354,7 +374,17 @@ async function doAction(action, extra){
 
   // token: keep in localStorage + UI
   const t = localStorage.getItem("avp_token") || "";
-  if (t && !extra.avp_webui_token) extra.avp_webui_token = t;
+
+  const t = getToken();
+  const needsToken = (action !== "token_get");
+  if (needsToken){
+    if (!t){
+      toast("Token required (use Token get first)", "bad");
+      return Promise.resolve({ ok:false, rc:22, action:"auth", msg:"missing token", data:{hint:"token required"}, ts:Math.floor(Date.now()/1000) });
+    }
+    extra.avp_webui_token = t;
+  }
+
 
   try{
     if ($("actState")) $("actState").textContent = "busy";
