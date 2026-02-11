@@ -4,11 +4,14 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.20 (2026-02-10)
+# Version   : v1.0.21 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.21 (2026-02-10)
+#   * POLISH: remove mkdir -p redundante (LOGDIR)
+#   * POLISH: emit_error usa has_fn log_error + detail arg
 # - v1.0.20 (2026-02-10)
 #   * CHORE: remove restos ### INJECT_*
 #   * HARDEN: emit_error sem clobber de variáveis globais (rc/msg)
@@ -61,7 +64,7 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.20"
+SCRIPT_VER="v1.0.21"
 set -u
 
 SELF_VER="$SCRIPT_VER"
@@ -76,8 +79,8 @@ has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
 emit_error(){
   _rc="$1"
   _msg="$2"
-  if type log_error >/dev/null 2>&1; then
-    log_error "AVP-POL-CRON" "$_msg" "$_rc"
+  if has_fn log_error >/dev/null 2>&1; then
+    log_error "AVP-POL-CRON" "$_msg" "$_rc" "stage=emit_error"
     return 0
   fi
 
@@ -105,7 +108,6 @@ rotate_if_big() {
 # logdir: padrão em RAM para evitar escrita persistente no jffs (override: AVP_LOGDIR)
 LOGDIR="${AVP_LOGDIR:-/tmp/avp_logs}"
 mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2>/dev/null || :; }
-mkdir -p "$LOGDIR" 2>/dev/null || :
 LOG="$LOGDIR/avp-pol-cron.log"
 rotate_if_big "$LOG"
 echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER START pid=$$" >>"$LOG"
