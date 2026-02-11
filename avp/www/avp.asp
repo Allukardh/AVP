@@ -290,7 +290,6 @@ function toast(msg, level){
 }
 
 function syncTokenUi(){
-  const t = localStorage.getItem("avp_token") || "";
   if ($("token")) $("token").value = t;
 }
 
@@ -371,9 +370,6 @@ function postApply(params){
 async function doAction(action, extra){
   extra = extra || {};
   extra.avp_webui_action = action;
-
-  // token: keep in localStorage + UI
-  const t = localStorage.getItem("avp_token") || "";
 
   const t = getToken();
   const needsToken = (action !== "token_get");
