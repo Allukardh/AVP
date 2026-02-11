@@ -4,11 +4,15 @@
 # Component : AVP-POL-CRON
 # File      : avp-pol-cron.sh
 # Role      : Cron wrapper (timestamp + rc) for AVP-POL run
-# Version   : v1.0.17 (2026-02-10)
+# Version   : v1.0.19 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.19 (2026-02-10)
+#   * FIX: tratar rc=99 (lock_active) como SKIP (rc=0) antes do END/failure_dump/emit_error
+# - v1.0.18 (2026-02-10)
+#   * FIX: rc=99 (lock_active) vira SKIP (rc=0) antes do END/failure_dump/emit_error
 # - v1.0.17 (2026-02-10)
 #   * FIX: STRICT_ORDER (set -u logo abaixo do SCRIPT_VER)
 #   * FEAT: rc=99 (lock_active) vira SKIP (treat as rc=0) no cron
@@ -53,7 +57,7 @@
 #   * SAFETY: keep cron quoting simple (wrapper script)
 # =============================================================
 
-SCRIPT_VER="v1.0.17"
+SCRIPT_VER="v1.0.19"
 set -u
 
 SELF_VER="$SCRIPT_VER"
@@ -108,6 +112,11 @@ if [ ! -f "$POL" ]; then
 else
   /bin/sh "$POL" run >>"$LOG" 2>&1
   rc=$?
+  # rc=99 (lock_active) => SKIP (nao é falha; evita ruido no cron)
+  if [ "${rc:-0}" -eq 99 ] 2>/dev/null; then
+    echo "$(ts) [CRON] AVP-POL-CRON ${SELF_VER:-$SCRIPT_VER} SKIP rc=99 (lock_active)" >>"$LOG"
+    rc=0
+  fi
 fi
 echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER END rc=$rc" >>"$LOG"
 if [ "$rc" -ne 0 ]; then
@@ -129,3 +138,4 @@ fi
 exit "$rc"
 ### INJECT_WARN: restore after avp-lib not inserted (pattern mismatch)
 ### INJECT_FAIL: could not patch rc=99 skip block
+### INJECT_FAIL: rc=$? not found
