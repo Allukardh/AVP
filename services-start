@@ -252,3 +252,24 @@ cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
   # sobe feeder (idempotente)
   [ -x /jffs/scripts/avp-webui-feed.sh ] && /jffs/scripts/avp-webui-feed.sh start >/dev/null 2>&1
 } &
+
+# ============================================================
+# AVP BOOTSTRAP: Action Layer Initialization (WOPU 3A)
+# ============================================================
+
+# Ensure last-action JSON exists at boot
+BOOT_TS="$(date +%s)"
+BOOT_JSON="/jffs/addons/avp/www/avp-action-last.json"
+
+if [ ! -s "${BOOT_JSON}" ]; then
+  echo "{\"ok\":true,\"rc\":0,\"action\":\"bootstrap\",\"msg\":\"boot init\",\"ts\":${BOOT_TS}}" > "${BOOT_JSON}"
+fi
+
+# Ensure WebUI symlink
+ln -sf "${BOOT_JSON}" /www/user/avp-action-last.json
+
+# Trigger action pipeline once (state sync)
+if [ -x /jffs/scripts/service-event ]; then
+  /jffs/scripts/service-event restart avp_webui_restart >/dev/null 2>&1
+fi
+
