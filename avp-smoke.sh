@@ -1029,3 +1029,30 @@ EOF
 esac
 
 exit 0
+
+# -------------------------------------------------------------
+# Incremental Hardening: Exit Sentinel (WARN only)
+# -------------------------------------------------------------
+_smoke_exit_sentinel_check() {
+  _f="$1"
+  [ -f "$_f" ] || return 0
+
+  _last_exit_line="$(grep -n '^exit[[:space:]]' "$_f" | tail -n 1 | cut -d: -f1)"
+  [ -n "$_last_exit_line" ] || return 0
+
+  _total_lines="$(wc -l < "$_f" | tr -d ' ')"
+
+  if [ "$_last_exit_line" -lt "$_total_lines" ]; then
+    log "WARN: EXIT sentinel: conteúdo após último exit em $_f (line=$_last_exit_line total=$_total_lines)"
+  fi
+}
+
+# Aplicar sentinel aos TARGETS principais (best-effort)
+for _t in $TARGETS; do
+  case "$_t" in
+    *.sh)
+      _smoke_exit_sentinel_check "$_t"
+      ;;
+  esac
+done
+
