@@ -9,6 +9,8 @@
 # =============================================================
 #
 # CHANGELOG
+# - v1.4.12 (2026-02-14)
+#   * CHG: add WARN exit sentinel check (incremental hardening)
 # - v1.4.11 (2026-02-10)
 #   * FIX: alinhar SCRIPT_VER ao estado atual (inclui gates monotonic/targets)
 # - v1.4.9 (2026-02-08)
@@ -114,7 +116,7 @@
 #   * ADD: initial release
 # =============================================================
 
-SCRIPT_VER="v1.4.11"
+SCRIPT_VER="v1.4.12"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
