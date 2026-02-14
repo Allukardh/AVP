@@ -3,11 +3,16 @@
 # Component : AVP-TOOLS
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version   : v1.0.2 (2026-02-14)
+# Version   : v1.0.3 (2026-02-14)
 # Status    : stable
 # -------------------------------------------------------------
 #
 # CHANGELOG
+# - v1.0.3 (2026-02-14)
+#   * ADDED: validação SCRIPT_VER vs tag rel
+#   * FIXED: variável ${tag} -> ${tag}
+#   * ADDED: validação opcional CHANGELOG externo
+
 # - v1.0.2 (2026-02-14)
 #   * CHG: incremental governance guards (working tree, duplicate tag, commit check)
 # - v1.0.1 (2026-02-08)
@@ -17,7 +22,7 @@
 #   * initial (tag convention enforcement)
 # =============================================================
 
-SCRIPT_VER="v1.0.2"
+SCRIPT_VER="v1.0.3"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -71,10 +76,22 @@ git rev-parse HEAD~1 >/dev/null 2>&1 || {
   exit 1
 }
 
-git tag | grep -q "^${TAG}$" && {
-  echo "Tag ${TAG} already exists."
+git tag | grep -q "^${tag}$" && {
+  echo "Tag ${tag} already exists."
   exit 1
 }
+
+# --- validação adicional para releases
+case "$kind" in
+  rel)
+    if [ "$name" != "${SCRIPT_VER}" ]; then
+      die "SCRIPT_VER (${SCRIPT_VER}) incompatível com tag ${name}"
+    fi
+    if [ -f CHANGELOG ] && ! grep -q "${name}" CHANGELOG; then
+      die "CHANGELOG não possui entrada para ${name}"
+    fi
+    ;;
+esac
 
 git tag -a "$tag" -m "$msg" "$obj"
 
