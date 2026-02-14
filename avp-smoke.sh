@@ -11,19 +11,16 @@
 # CHANGELOG
 # - v1.4.15 (2026-02-14)
 #   * FIX: normalize changelog (add missing entries, preserve full history)
-#
-# - v1.4.13 (2026-02-14)
-#   * NOTE: version consumed for governance correction (header/SCRIPT_VER alignment)
-#
-# - v1.4.10 (2026-02-08)
-#   * NOTE: version number skipped involuntarily due to versioning error (no functional change lost)
-
 # - v1.4.14 (2026-02-14)
 #   * FIX: reorder changelog entries (strict order compliance)
+# - v1.4.13 (2026-02-14)
+#   * NOTE: version consumed for governance correction (header/SCRIPT_VER alignment)
 # - v1.4.12 (2026-02-14)
 #   * CHG: add WARN exit sentinel check (incremental hardening)
 # - v1.4.11 (2026-02-10)
 #   * FIX: alinhar SCRIPT_VER ao estado atual (inclui gates monotonic/targets)
+# - v1.4.10 (2026-02-08)
+#   * NOTE: version number skipped involuntarily due to versioning error (no functional change lost)
 # - v1.4.9 (2026-02-08)
 #   * FIX: BASHISM gate nao reprova local (busybox ash); continua bloqueando declare/typeset/function/source
 # - v1.4.8 (2026-01-26)
