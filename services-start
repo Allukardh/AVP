@@ -1,254 +1,50 @@
 #!/bin/sh
-# =============================================================
-# AutoVPN Platform (AVP)
-# Component : AVP-BOOT
-# File      : services-start
-# Role      : Boot / Startup hooks (cron + Entware /opt bind)
-# Version   : v1.1.14 (2026-01-26)
-# Status    : stable
-# =============================================================
-#
-# PURPOSE
-#   Boot-time scheduler wiring for AVP.
-#   - Mantem /opt persistente via bind mount do Entware (USB)
-#   - Agenda o cron que executa AVP-POL (que decide se chama AVP-ENG)
-#
-# CHANGELOG
-# - v1.1.14 (2026-01-26)
-#   * VERSION: bump patch (pos harden canônico)
-# - v1.1.13 (2026-01-26)
-#   * HARDEN: perms 0600 dinamico em /jffs/scripts/avp/state/* (suporta devices/GUI sem paths fixos)
-# - v1.1.12 (2026-01-26)
-#   * HARDEN: auto-fix perms (chmod) no boot + modo --perms-only (corrige 0666/0777)
-# - v1.1.11 (2026-01-18)
-#   * POLISH: padroniza SCRIPT_VER + set -u (ordem oficial) e remove linhas em branco desnecessarias
-# - v1.1.10 (2026-01-17)
-#   * POLISH: logs do Entware mais cirurgicos (detectado + rc do bind + suspeito com src)
-# - v1.1.9 (2026-01-17)
-#   * FIX: Entware autodetect em /tmp/mnt/* (robusto a label/nome do mount) + bind /tmp/opt
-# - v1.1.8 (2026-01-16)
-#   * FIX: AVP-ENG-ROTATE fica com 1 linha canonica (payload-var + aspas seguras), removendo duplicacoes/quoting quebrado
-# - v1.1.7 (2026-01-16)
-#   * FIX: rotate cron usa payload-var com quoting robusto; remove duplicacao de cru a AVP-ENG-ROTATE
-# - v1.1.6 (2026-01-16)
-#   * CHORE: rotacao USB usa payload em variavel; changelog sem sequencia (hex) para evitar falso-positivo de grep
-# - v1.1.5 (2026-01-16)
-#   * FIX: remove linha cru a AVP-ENG-ROTATE com escape hex literal; mantém apenas a forma com aspas reais
-# - v1.1.4 (2026-01-16)
-#   * FIX: services-start executavel (+x) e comando cru sem escape hex literal (quoting correto no boot)
-# - v1.1.3 (2026-01-16)
-#   * ADD: cron diario 05:58 para avp-eng.sh --rotate-usb (preserva logs em /tmp antes do reboot 06:00)
-# - v1.1.2 (2025-12-31)
-#   * FIX: evita start duplicado do AVP WebUI feeder no boot (services-start tinha 2 chamadas)
-# - v1.1.1 (2025-12-30)
-#   * FIX: Recria symlinks do AVP WebUI em /www/user a cada boot (/www é volátil)
-#   * FIX: Symlink do JSON é criado mesmo antes do arquivo existir (feeder cria depois)
-# - v1.1.0 (2025-12-30)
-#   * ADD: start do AVP WebUI feeder no boot (gera /user/avp-status.json)
-# - v1.0.9 (2025-12-26)
-#   * CHG: cron AVP-POL agora executa /jffs/scripts/avp-pol-cron.sh (log dedicado com timestamp + rc)
-# - v1.0.8 (2025-12-24)
-#   * CHORE: polimento preparatório pra GUI (suite alinhada)
-# - v1.0.7 (2025-12-24)
-#   * CHORE: cron renomeado de DEVICE_FAILOVER para AVP-POL (sem alterar comando/frequencia)
-# - v1.0.6 (2025-12-23)
-#   * CHORE: consolidacao historica e renumeração coerente (Etapa B)
-# - v1.0.5 (2025-12-23)
-#   * STD: padroniza header + bloco CHANGELOG (Etapa A)
-# - v1.0.4 (2025-12-23)
-#   * FIX: remove dependencia de mountpoint (Merlin-safe) via /proc/mounts
-# - v1.0.3 (2025-12-23)
-#   * FIX: aguarda Entware REAL ficar pronto (opkg executavel) antes de prosseguir
-# - v1.0.2 (2025-12-23)
-#   * ADD: montagem persistente do Entware em /opt via bind mount (USB)
-# - v1.0.1 (2025-12-20)
-#   * CHG: cron chama AVP-POL (--run) em vez de AVP-ENG direto
-# - v1.0.0 (2025-12-20)
-#   * BASE: cron inicial do failover multi-dispositivo
-# =============================================================
+# ============================================================
+# Component: AVP (AutoVPN Platform)
+# File: services-start
+# Role: Boot bootstrap (Merlin hook)
+# Status: ACTIVE
+# Version: v1.0.19 (2026-02-14)
+# SCRIPT_VER="v1.0.19"
+# ============================================================
 
-SCRIPT_VER="v1.1.14"
+# --- PATH safety ---
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
-hash -r 2>/dev/null || true
-set -u
 
-#
-# --- PERMS HARDEN (AVP) — non-blocking ---
-avp_fix_perms() {
-  # Merlin-puro: este bloco NAO depende de /opt (Entware)
-  export PATH="/usr/bin:/usr/sbin:/bin:/sbin:/jffs/scripts:${PATH:-}"
+# --- Ensure runtime dirs ---
+mkdir -p /www/user
+mkdir -p /jffs/addons/avp/www
+mkdir -p /tmp/avp_logs
 
-  # idempotente: aplicar chmod nao muda conteudo; nunca bloqueia boot
-  # 0755: scripts executaveis
-  for f in \
-    "/jffs/scripts/services-start" \
-    "/jffs/scripts/avp-smoke.sh" \
-    "/jffs/scripts/avp-action.sh" \
-    "/jffs/scripts/avp-apply.sh" \
-    "/jffs/scripts/avp-backup.sh" \
-    "/jffs/scripts/avp-cli.sh" \
-    "/jffs/scripts/avp-diag.sh" \
-    "/jffs/scripts/avp-eng.sh" \
-    "/jffs/scripts/avp-pol.sh" \
-    "/jffs/scripts/avp-pol-cron.sh" \
-    "/jffs/scripts/avp-webui.sh" \
-    "/jffs/scripts/avp-webui-feed.sh" \
-    "/jffs/scripts/post-mount" ; do
-    [ -e "$f" ] || continue
-    chmod 0755 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0755 $f"
-  done
+# --- Reinforce permissions (idempotent) ---
+[ -f /jffs/scripts/service-event ] && chmod 0755 /jffs/scripts/service-event
+[ -f /jffs/scripts/avp-action.sh ] && chmod 0755 /jffs/scripts/avp-action.sh
+[ -f /jffs/scripts/avp-webui-feed.sh ] && chmod 0755 /jffs/scripts/avp-webui-feed.sh
 
-  # 0644: codigo/assets nao-sensiveis
-  for f in \
-    "/jffs/scripts/avp-lib.sh" \
-    "/jffs/scripts/.gitignore" \
-    "/jffs/scripts/avp/www/avp.asp" \
-    "/jffs/scripts/avp/www/avp-status.json" \
-    "/jffs/scripts/logs/avp_events.log" ; do
-    [ -e "$f" ] || continue
-    chmod 0644 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0644 $f"
-  done
+# --- WebUI status symlink ---
+ln -sf /jffs/addons/avp/www/avp-status.json /www/user/avp-status.json
 
-  # 0600: policy/state sensiveis
-  # policy (fixo)
-  for f in \
-    "/jffs/scripts/autovpn/policy/devices.conf" \
-    "/jffs/scripts/autovpn/policy/global.conf" ; do
-    [ -e "$f" ] || continue
-    chmod 0600 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0600 $f"
-  done
-
-  # state (dinamico: devices/labels mudam via devices.conf/GUI)
-  for f in /jffs/scripts/avp/state/*; do
-    [ -e "$f" ] || continue
-    [ -f "$f" ] || continue
-    chmod 0600 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0600 $f"
-  done
-}
-
-# modo manual (sem mexer em cron/webui):
-#   sh /jffs/scripts/services-start --perms-only
-if [ "${1:-}" = "--perms-only" ]; then
-  avp_fix_perms
-  exit 0
+# --- Start WebUI feeder (background) ---
+if [ -x /jffs/scripts/avp-webui-feed.sh ]; then
+  /jffs/scripts/avp-webui-feed.sh start >/dev/null 2>&1
 fi
 
-# aplica no boot (nao bloqueia)
-avp_fix_perms
+# ============================================================
+# BOOTSTRAP ACTION LAYER (NEW)
+# ============================================================
 
-#
-# ENTWARE MOUNT FIX (PERSISTENTE) — comentario importante
-#
-# CONTEXTO
-#   Em Asuswrt-Merlin, /opt aponta para RAM:
-#     /opt -> /tmp/opt
-#   Logo, tudo em /opt some apos reboot/limpeza do /tmp.
-#
-# OBJETIVO
-#   Garantir que /tmp/opt aponte para o opt REAL do USB (Entware),
-#   com checagens para evitar race/timing da montagem.
-#
+# --- Create minimal last-action bootstrap JSON ---
+BOOT_TS="$(date +%s)"
+BOOT_JSON="/jffs/addons/avp/www/avp-action-last.json"
 
-# Helper: mount check sem util-linux (Merlin-safe)
+echo "{\"ok\":true,\"rc\":0,\"action\":\"bootstrap\",\"msg\":\"boot init\",\"ts\":${BOOT_TS}}" > "${BOOT_JSON}"
 
-is_mounted() {
-  # usage: is_mounted "<path>"
-  grep -qs " $1 " /proc/mounts
-}
+# --- Ensure WebUI symlink ---
+ln -sf "${BOOT_JSON}" /www/user/avp-action-last.json
 
-OPT_REAL="/tmp/opt"
-
-# Autodetect do Entware (robusto a label/nome do mount em /tmp/mnt)
-# Procura opkg em:
-#   - /tmp/mnt/<X>/entware/(bin|sbin)/opkg
-#   - /tmp/mnt/<X>/(bin|sbin)/opkg
-find_entware_root() {
-  for d in /tmp/mnt/*; do
-    [ -d "$d" ] || continue
-
-    # Preferencia: subpasta entware
-    if [ -x "$d/entware/bin/opkg" ] || [ -x "$d/entware/sbin/opkg" ]; then
-      echo "$d/entware"
-      return 0
-    fi
-
-    # Fallback: entware na raiz do mount
-    if [ -x "$d/bin/opkg" ] || [ -x "$d/sbin/opkg" ]; then
-      echo "$d"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# 1) Espera o Entware aparecer em /tmp/mnt/* (até 30s)
-i=0
-ENT_ROOT=""
-while [ $i -lt 30 ] && [ -z "$ENT_ROOT" ]; do
-  ENT_ROOT="$(find_entware_root 2>/dev/null)"
-  [ -n "$ENT_ROOT" ] && break
-  sleep 1
-  i=$((i+1))
-done
-
-# Se não achou, segue (não bloqueia boot)
-if [ -z "$ENT_ROOT" ]; then
-  logger -t AVP-BOOT "Entware: nao encontrado em /tmp/mnt/* (skip /opt)"
-else
-  # Loga o caminho escolhido (diagnostico)
-  logger -t AVP-BOOT "Entware: detectado em $ENT_ROOT"
-
-  mkdir -p "$OPT_REAL"
-
-  # Monta apenas se ainda nao estiver montado
-  if ! is_mounted "$OPT_REAL"; then
-    mount --bind "$ENT_ROOT" "$OPT_REAL" 2>/dev/null
-    rc=$?
-    if [ $rc -ne 0 ]; then
-      mount -o bind "$ENT_ROOT" "$OPT_REAL"
-      rc=$?
-    fi
-    if [ $rc -ne 0 ]; then
-      logger -t AVP-BOOT "Entware: FAIL bind rc=$rc (src=$ENT_ROOT dst=$OPT_REAL)"
-    fi
-  fi
-
-  export PATH="/opt/bin:/opt/sbin:$PATH"
-
-  # Checagem pos-mount: /opt funcional?
-  if [ -x /opt/bin/opkg ] || [ -x /opt/sbin/opkg ]; then
-    logger -t AVP-BOOT "Entware: OK ($ENT_ROOT -> /opt)"
-  else
-    logger -t AVP-BOOT "Entware: SUSPEITO (opkg nao executavel em /opt) (src=$ENT_ROOT)"
-  fi
+# --- Trigger action pipeline once (state sync) ---
+if [ -x /jffs/scripts/service-event ]; then
+  /jffs/scripts/service-event restart avp_webui_restart >/dev/null 2>&1
 fi
-# Aguarda o sistema estabilizar após boot
-sleep 60
 
-# Evita duplicidade (reboot / restart de serviços)
-cru d AVP-POL 2>/dev/null
-
-# Failover multi-dispositivo a cada 5 minutos
-# (AVP-POL decide se executa ou não, via AUTOVPN_ENABLED em global.conf)
-# (saída do cron é silenciada propositalmente)
-cru a AVP-POL "*/5 * * * * /bin/sh /jffs/scripts/avp-pol-cron.sh"
-AVP_ENG_ROTATE_PAYLOAD='export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin"; export GIT_PAGER=cat PAGER=cat; /jffs/scripts/avp-eng.sh --rotate-usb >/dev/null 2>&1'
-cru d AVP-ENG-ROTATE 2>/dev/null || :
-cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
-
-# AVP WebUI feeder (static JSON endpoint for WebUI)
-
-# --- AVP WebUI boot (recria /www/user após reboot) ---
-{
-  # /www é volátil; recriar diretório e links sempre
-  mkdir -p /www/user 2>/dev/null
-
-  # WebUI page
-  [ -f /jffs/addons/avp/www/avp.asp ] && ln -sf /jffs/addons/avp/www/avp.asp /www/user/avp.asp
-
-  # JSON (se existir em /jffs/addons/avp/www, expõe em /www/user também)
-  ln -sf /jffs/addons/avp/www/avp-status.json /www/user/avp-status.json 2>/dev/null
-
-  # sobe feeder (idempotente)
-  [ -x /jffs/scripts/avp-webui-feed.sh ] && /jffs/scripts/avp-webui-feed.sh start >/dev/null 2>&1
-} &
+exit 0
