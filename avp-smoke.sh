@@ -4,14 +4,14 @@
 # Component : AVP-SMOKE
 # File      : avp-smoke.sh
 # Role      : Pre/Post/Hotfix gates (baseline + patch-safety + syntax + JSON probes + WebUI ASP gate)
-# Version   : v1.4.13 (2026-02-10)
+# Version   : v1.4.14 (2026-02-10)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.4.14 (2026-02-14)
+#   * FIX: reorder changelog entries (strict order compliance)
 # - v1.4.12 (2026-02-14)
-# - v1.4.13 (2026-02-14)
-#   * FIX: align header Version with SCRIPT_VER (governance correction)
 #   * CHG: add WARN exit sentinel check (incremental hardening)
 # - v1.4.11 (2026-02-10)
 #   * FIX: alinhar SCRIPT_VER ao estado atual (inclui gates monotonic/targets)
@@ -118,7 +118,7 @@
 #   * ADD: initial release
 # =============================================================
 
-SCRIPT_VER="v1.4.13"
+SCRIPT_VER="v1.4.14"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
