@@ -55,6 +55,25 @@ esac
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists: $tag"
 obj="$(git rev-parse "$ref")" || die "invalid ref: $ref"
 
+
+# -------------------------------
+# Incremental Governance Guards
+# -------------------------------
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Working tree not clean. Commit first."
+  exit 1
+fi
+
+git rev-parse HEAD~1 >/dev/null 2>&1 || {
+  echo "No previous commit to diff against."
+  exit 1
+}
+
+git tag | grep -q "^${TAG}$" && {
+  echo "Tag ${TAG} already exists."
+  exit 1
+}
+
 git tag -a "$tag" -m "$msg" "$obj"
 
 echo "OK: created tag $tag -> $obj"
