@@ -3,11 +3,13 @@
 # Component : AVP-TOOLS
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version   : v1.0.1 (2026-02-08)
+# Version   : v1.0.2 (2026-02-14)
 # Status    : stable
 # -------------------------------------------------------------
 #
 # CHANGELOG
+# - v1.0.2 (2026-02-14)
+#   * CHG: incremental governance guards (working tree, duplicate tag, commit check)
 # - v1.0.1 (2026-02-08)
 #   * FIX: git show usa --no-pager (evita pager/less no Merlin/SSH)
 #   * FIX: padroniza header Version e SCRIPT_VER (sem aspas)
@@ -15,7 +17,7 @@
 #   * initial (tag convention enforcement)
 # =============================================================
 
-SCRIPT_VER="v1.0.1"
+SCRIPT_VER="v1.0.2"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
