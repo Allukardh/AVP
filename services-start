@@ -272,4 +272,3 @@ ln -sf "${BOOT_JSON}" /www/user/avp-action-last.json
 if [ -x /jffs/scripts/service-event ]; then
   /jffs/scripts/service-event restart avp_webui_restart >/dev/null 2>&1
 fi
-
