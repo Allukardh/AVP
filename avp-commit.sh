@@ -10,6 +10,9 @@
 #
 # CHANGELOG
 # - v1.0.11 (2026-02-15)
+# * FIX: gate exit 0 só valida scripts estruturais quando alterados (CHANGED)
+# * FIX: ultimo comando executavel ignora comentarios e linhas em branco
+# - v1.0.11 (2026-02-15)
 #   * CHG: remove SMOKE interno; SMOKE fica no WOPU (pre/post)
 #   * CHG: remove auto-checkpoint e push; publicacao passa a ser do avp-tag.sh (SSOT main)
 #   * CHG: avp-commit.sh agora faz apenas gate + commit local
@@ -112,15 +115,23 @@ if [ "$REMOVED" -gt 20 ] && [ "$ALLOW_LARGE_REMOVAL" -ne 1 ]; then
 fi
 
 # ---- EXIT FINAL ROBUSTO ----
-for f in avp-pol.sh avp-apply.sh avp-smoke.sh services-start service-event; do
+# Valida apenas se o arquivo estiver em CHANGED; ignora comentarios/linhas em branco finais.
+STRUCT_EXIT_FILES="avp-pol.sh avp-apply.sh avp-smoke.sh services-start service-event"
+for f in $STRUCT_EXIT_FILES; do
+  echo "$CHANGED" | grep -qx "$f" || continue
   [ -f "$f" ] || continue
-  LAST_NON_EMPTY="$(awk 'NF{line=$0} END{print line}' "$f")"
-  echo "$LAST_NON_EMPTY" | grep -Eq "^[[:space:]]*exit[[:space:]]+0[[:space:]]*$" || {
+  LAST_EXEC="$(awk '
+    /^[[:space:]]*#/ {next}
+    NF==0 {next}
+    {last=$0}
+    END{print last}
+  ' "$f")"
+  [ -n "$LAST_EXEC" ] || { echo "ERROR: nao achei linha executavel para validar exit 0 em $f"; exit 1; }
+  echo "$LAST_EXEC" | grep -Eq "^[[:space:]]*exit[[:space:]]+0[[:space:]]*$" || {
     echo "ERROR: ultimo comando executavel nao e 'exit 0' em $f"
     exit 1
   }
 done
-
 # ---- DETERMINISMO 3B ----
 MODE="3A"
 if [ -f /tmp/avp_last_apply.ok ]; then
