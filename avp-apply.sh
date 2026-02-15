@@ -9,6 +9,9 @@
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.25 (2026-02-14)
+#   * FEATURE: registra contexto 3B apos patch aplicado com sucesso,
+#     criando /tmp/avp_last_apply.ok e /tmp/avp_last_apply_files.list
 # - v1.0.24 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
 # - v1.0.23 (2026-01-21)
