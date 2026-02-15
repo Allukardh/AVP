@@ -4,11 +4,13 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version   : v1.0.3 (2026-02-15)
+# Version   : v1.0.4 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.4 (2026-02-15)
+#   * CHANGE: baseline policy alinhada com avp-tag.sh (status --porcelain)
 # - v1.0.3 (2026-02-15)
 #   * HARDEN: validacao robusta do ultimo exit 0 (ignora linhas em branco finais)
 # - v1.0.2 (2026-02-15)
@@ -29,7 +31,7 @@
 #   * ADD: versao inicial
 # =============================================================
 
-SCRIPT_VER="v1.0.3"
+SCRIPT_VER="v1.0.4"
 set -u
 
 ALLOW_MULTI=0
@@ -48,10 +50,11 @@ done
 [ -n "$MSG" ] || { echo "ERROR: commit message obrigatoria"; exit 1; }
 
 # ---- BASELINE GATE REAL ----
-git diff-index --quiet HEAD -- || {
-  echo "ERROR: baseline DIRTY antes do commit"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+  echo "Working tree not clean. Commit first."
+  git status -sb
   exit 1
-}
+fi
 
 CHANGED="$(git diff --name-only)"
 [ -n "$CHANGED" ] || { echo "ERROR: nenhuma alteracao detectada"; exit 1; }
