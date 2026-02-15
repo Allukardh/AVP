@@ -4,7 +4,7 @@
 # Component : AVP-BOOT
 # File      : services-start
 # Role      : Boot / Startup hooks (cron + Entware /opt bind)
-# Version : v1.1.15 (2026-01-26)
+# Version : v1.1.15 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
@@ -15,6 +15,7 @@
 #
 # CHANGELOG
 # - v1.1.15 (2026-02-15)
+# * FIX: header date -> 2026-02-15
 # * FIX: recria /root/.ssh -> /jffs/.ssh no boot (GitHub ssh -T puro) antes do boot settle
 # - v1.1.14 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
