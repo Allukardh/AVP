@@ -4,11 +4,13 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version   : v1.0.2 (2026-02-15)
+# Version   : v1.0.3 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.3 (2026-02-15)
+#   * HARDEN: validacao robusta do ultimo exit 0 (ignora linhas em branco finais)
 # - v1.0.2 (2026-02-15)
 #   * FIX: baseline gate real (bloqueia repo DIRTY)
 #   * FIX: validacao robusta de CHANGELOG
@@ -27,7 +29,7 @@
 #   * ADD: versao inicial
 # =============================================================
 
-SCRIPT_VER="v1.0.2"
+SCRIPT_VER="v1.0.3"
 set -u
 
 ALLOW_MULTI=0
@@ -85,12 +87,12 @@ if [ "$REMOVED" -gt 20 ] && [ "$ALLOW_LARGE_REMOVAL" -ne 1 ]; then
   exit 4
 fi
 
-# ---- EXIT FINAL SEGURO ----
+# ---- EXIT FINAL ROBUSTO ----
 for f in avp-pol.sh avp-apply.sh avp-smoke.sh services-start service-event; do
   [ -f "$f" ] || continue
-  LAST_LINE="$(tail -n1 "$f")"
-  echo "$LAST_LINE" | grep -q "^exit 0" || {
-    echo "ERROR: ultimo comando nao e 'exit 0' em $f"
+  LAST_NON_EMPTY="$(awk 'NF{line=$0} END{print line}' "$f")"
+  echo "$LAST_NON_EMPTY" | grep -Eq "^[[:space:]]*exit[[:space:]]+0[[:space:]]*$" || {
+    echo "ERROR: ultimo comando executavel nao e 'exit 0' em $f"
     exit 1
   }
 done
