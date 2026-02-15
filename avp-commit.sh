@@ -4,11 +4,13 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version : v1.0.9 (2026-02-15)
+# Version : v1.0.10 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.10 (2026-02-15)
+#   * FIX: HEADER_VER encontra token vX.Y.Z via awk (independe de ":")
 # - v1.0.9 (2026-02-15)
 #   * FIX: HEADER_VER agora encontra token vX.Y.Z (independe de ":")
 # - v1.0.8 (2026-02-15)
@@ -44,7 +46,7 @@
 # * ADD: versao inicial
 # =============================================================
 
-SCRIPT_VER="v1.0.9"
+SCRIPT_VER="v1.0.10"
 set -u
 
 ALLOW_MULTI=0
@@ -90,7 +92,7 @@ fi
 
 # ---- GOVERNANCA ROBUSTA ----
 for f in $SH_FILES; do
-  HEADER_VER="$(grep -E '^# Version' "$f" | head -n1 | awk '{print $3}')"
+  HEADER_VER="$(grep -E '^# Version' "$f" | head -n1 | awk '{for(i=1;i<=NF;i++) if($i ~ /^v[0-9]/){print $i; exit}}')"
   SCRIPT_VER_LINE="$(grep -E '^SCRIPT_VER=' "$f" | head -n1 | cut -d'"' -f2)"
   CHANGELOG_MATCH="$(awk "/^# CHANGELOG/{flag=1;next}/^# =============================================================/{flag=0}flag" "$f" | grep -E "$HEADER_VER" || true)"
 
