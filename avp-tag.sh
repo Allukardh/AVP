@@ -12,7 +12,6 @@
 #   * ADDED: validação SCRIPT_VER vs tag rel
 #   * FIXED: variável ${tag} -> ${tag}
 #   * ADDED: validação opcional CHANGELOG externo
-
 # - v1.0.2 (2026-02-14)
 #   * CHG: incremental governance guards (working tree, duplicate tag, commit check)
 # - v1.0.1 (2026-02-08)
