@@ -3,16 +3,17 @@
 # Component : AVP-TOOLS
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version   : v1.0.3 (2026-02-14)
+# Version   : v1.0.4 (2026-02-14)
 # Status    : stable
 # -------------------------------------------------------------
 #
 # CHANGELOG
+# - v1.0.4 (2026-02-14)
+#   * CHG: working tree validation agora usa git status --porcelain (inclui untracked)
 # - v1.0.3 (2026-02-14)
 #   * ADDED: validação SCRIPT_VER vs tag rel
-#   * FIXED: variável ${tag} -> ${tag}
-#   * ADDED: validação opcional CHANGELOG externo
-
+#   * FIXED: variável ${TAG} -> ${tag}
+#   * ADDED: validação CHANGELOG externo (se existir)
 # - v1.0.2 (2026-02-14)
 #   * CHG: incremental governance guards (working tree, duplicate tag, commit check)
 # - v1.0.1 (2026-02-08)
@@ -22,7 +23,7 @@
 #   * initial (tag convention enforcement)
 # =============================================================
 
-SCRIPT_VER="v1.0.3"
+SCRIPT_VER="v1.0.4"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -62,12 +63,13 @@ esac
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists: $tag"
 obj="$(git rev-parse "$ref")" || die "invalid ref: $ref"
 
-
 # -------------------------------
 # Incremental Governance Guards
 # -------------------------------
-if ! git diff --quiet || ! git diff --cached --quiet; then
+
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
   echo "Working tree not clean. Commit first."
+  git status -sb
   exit 1
 fi
 
@@ -76,15 +78,14 @@ git rev-parse HEAD~1 >/dev/null 2>&1 || {
   exit 1
 }
 
-git tag | grep -q "^${tag}$" && {
+if git tag | grep -q "^${tag}$"; then
   echo "Tag ${tag} already exists."
   exit 1
-}
+fi
 
-# --- validação adicional para releases
 case "$kind" in
   rel)
-    if [ "$name" != "${SCRIPT_VER}" ]; then
+    if [ "$name" != "$SCRIPT_VER" ]; then
       die "SCRIPT_VER (${SCRIPT_VER}) incompatível com tag ${name}"
     fi
     if [ -f CHANGELOG ] && ! grep -q "${name}" CHANGELOG; then
@@ -94,6 +95,5 @@ case "$kind" in
 esac
 
 git tag -a "$tag" -m "$msg" "$obj"
-
 echo "OK: created tag $tag -> $obj"
 git -c color.ui=false --no-pager show -s --decorate --oneline "$obj"
