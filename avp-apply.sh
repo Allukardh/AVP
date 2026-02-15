@@ -4,11 +4,13 @@
 # Component : AVP-APPLY
 # File      : avp-apply.sh
 # Role      : Patch runner (smoke pre/patch-check/post + git apply) with session-safe background execution
-# Version   : v1.0.25 (2026-02-14)
+# Version   : v1.0.26 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.26 (2026-02-15)
+#   * CHANGE: baseline policy alinhada com avp-tag.sh (status --porcelain)
 # - v1.0.25 (2026-02-14)
 #   * FEATURE: registra contexto 3B apos patch aplicado com sucesso,
 #     criando /tmp/avp_last_apply.ok e /tmp/avp_last_apply_files.list
@@ -74,7 +76,7 @@
 #   * ADD   : modo background default + --fg opcional
 # =============================================================
 
-SCRIPT_VER="v1.0.25"
+SCRIPT_VER="v1.0.26"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -254,7 +256,7 @@ run_apply() {
     "$SMOKE" --hotfix || exit 10
   else
     _dirty=0
-    git diff-index --quiet HEAD -- 2>/dev/null || _dirty=1
+[ -n "$(git status --porcelain 2>/dev/null)" ] && _dirty=1
     if [ "$_dirty" -eq 0 ]; then
       log "SMOKE=--pre (baseline limpo)"
       "$SMOKE" --pre || exit 20
