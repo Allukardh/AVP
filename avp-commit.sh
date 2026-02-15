@@ -4,11 +4,13 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version   : v1.0.5 (2026-02-15)
+# Version : v1.0.6 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.6 (2026-02-15)
+#   * FIX: parse HEADER_VER robusto (ignora ":")
 # - v1.0.5 (2026-02-15)
 # * FIX: baseline gate permite staged/unstaged; bloqueia apenas untracked
 # * FIX: CHANGED inclui staged + unstaged (sort -u)
@@ -36,7 +38,7 @@
 # * ADD: versao inicial
 # =============================================================
 
-SCRIPT_VER="v1.0.5"
+SCRIPT_VER="v1.0.6"
 set -u
 
 ALLOW_MULTI=0
