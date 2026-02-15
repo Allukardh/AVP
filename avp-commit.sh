@@ -4,11 +4,15 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version : v1.0.10 (2026-02-15)
+# Version : v1.0.11 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.11 (2026-02-15)
+#   * CHG: remove SMOKE interno; SMOKE fica no WOPU (pre/post)
+#   * CHG: remove auto-checkpoint e push; publicacao passa a ser do avp-tag.sh (SSOT main)
+#   * CHG: avp-commit.sh agora faz apenas gate + commit local
 # - v1.0.10 (2026-02-15)
 #   * FIX: HEADER_VER encontra token vX.Y.Z via awk (independe de ":")
 # - v1.0.9 (2026-02-15)
@@ -46,7 +50,7 @@
 # * ADD: versao inicial
 # =============================================================
 
-SCRIPT_VER="v1.0.10"
+SCRIPT_VER="v1.0.11"
 set -u
 
 ALLOW_MULTI=0
@@ -77,10 +81,6 @@ CHANGED_WORK="$(git diff --name-only)"
 CHANGED_CACHED="$(git diff --cached --name-only)"
 CHANGED="$(printf '%s\n%s\n' "$CHANGED_WORK" "$CHANGED_CACHED" | sed '/^$/d' | sort -u)"
 [ -n "$CHANGED" ] || { echo "ERROR: nenhuma alteracao detectada"; exit 1; }
-
-# ---- SMOKE ----
-/jffs/scripts/avp-smoke.sh --pre || exit 6
-/jffs/scripts/avp-smoke.sh --post || exit 6
 
 # ---- MULTI .SH GATE ----
 SH_FILES="$(echo "$CHANGED" | grep '\.sh$' || true)"
@@ -134,22 +134,6 @@ fi
 # -A para capturar deletions, caso existam
 git add -A -- $CHANGED || exit 1
 git commit -m "$MSG" || exit 1
-
-# ---- AUTO-CHECKPOINT ANTES DO PUSH ----
-STRUCTURAL_FILES="avp-apply.sh avp-smoke.sh avp-pol.sh services-start service-event"
-for f in $CHANGED; do
-  for s in $STRUCTURAL_FILES; do
-    if [ "$f" = "$s" ]; then
-      DATE_TAG="$(date +%Y%m%d)"
-      SLUG="$(basename "$f" .sh)_${DATE_TAG}"
-      /jffs/scripts/avp-tag.sh ck "$SLUG" "Checkpoint automatico: $f alterado" || exit 1
-      break 2
-    fi
-  done
-done
-
-# ---- PUSH ----
-git push origin main || exit 1
 
 # ---- CLEANUP 3B ----
 if [ "$MODE" = "3B" ]; then
