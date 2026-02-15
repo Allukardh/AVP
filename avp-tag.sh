@@ -3,7 +3,7 @@
 # Component : AVP-TOOLS
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version : v1.0.5 (2026-02-14)
+# Version : v1.0.5 (2026-02-15)
 # Status    : stable
 # -------------------------------------------------------------
 #
