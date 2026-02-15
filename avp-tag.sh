@@ -86,9 +86,6 @@ git tag | grep -q "^${tag}$" && {
 # --- validação adicional para releases
 case "$kind" in
   rel)
-    if [ "$name" != "${SCRIPT_VER}" ]; then
-      die "SCRIPT_VER (${SCRIPT_VER}) incompatível com tag ${name}"
-    fi
     if [ -f CHANGELOG ] && ! grep -q "${name}" CHANGELOG; then
       die "CHANGELOG não possui entrada para ${name}"
     fi
