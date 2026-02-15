@@ -4,11 +4,13 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version : v1.0.8 (2026-02-15)
+# Version : v1.0.9 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.9 (2026-02-15)
+#   * FIX: HEADER_VER agora encontra token vX.Y.Z (independe de ":")
 # - v1.0.8 (2026-02-15)
 #   * FIX: HEADER_VER extrai vX.Y.Z mesmo com "# Version : ..."
 # - v1.0.7 (2026-02-15)
@@ -42,7 +44,7 @@
 # * ADD: versao inicial
 # =============================================================
 
-SCRIPT_VER="v1.0.8"
+SCRIPT_VER="v1.0.9"
 set -u
 
 ALLOW_MULTI=0
