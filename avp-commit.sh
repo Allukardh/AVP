@@ -4,12 +4,14 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version   : v1.0.0 (2026-02-14)
+# Version   : v1.0.1 (2026-02-15)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
 # - v1.0.0 (2026-02-14)
+# - v1.0.1 (2026-02-15)
+#   * ADD: auto-checkpoint para scripts estruturais (Modelo B)
 #   * ADD: gate unificado para 3A e 3B
 #   * ADD: valida governança (Version/SCRIPT_VER/CHANGELOG)
 #   * ADD: bloqueio multi .sh sem --allow-multi
@@ -18,7 +20,7 @@
 #   * ADD: valida determinismo no modo 3B
 # =============================================================
 
-SCRIPT_VER="v1.0.0"
+SCRIPT_VER="v1.0.1"
 set -u
 
 ALLOW_MULTI=0
@@ -103,6 +105,20 @@ git push origin main || exit 1
 if [ "$MODE" = "3B" ]; then
   rm -f /tmp/avp_last_apply.ok /tmp/avp_last_apply_files.list
 fi
+
+
+  # ---- AUTO-CHECKPOINT ESTRUTURAL (Modelo B) ----
+  STRUCTURAL_FILES="avp-apply.sh avp-smoke.sh avp-pol.sh services-start service-event"
+  for f in $CHANGED; do
+    for s in $STRUCTURAL_FILES; do
+      if [ "$f" = "$s" ]; then
+        DATE_TAG="$(date +%Y%m%d)"
+        SLUG="$(basename "$f" .sh)_${DATE_TAG}"
+        /jffs/scripts/avp-tag.sh ck "$SLUG" "Checkpoint automatico: $f alterado"
+        break 2
+      fi
+    done
+  done
 
 echo "OK: commit realizado com sucesso (modo $MODE)"
 exit 0
