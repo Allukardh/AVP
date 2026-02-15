@@ -4,7 +4,7 @@
 # Component : AVP-BOOT
 # File      : services-start
 # Role      : Boot / Startup hooks (cron + Entware /opt bind)
-# Version   : v1.1.14 (2026-01-26)
+# Version : v1.1.15 (2026-01-26)
 # Status    : stable
 # =============================================================
 #
@@ -14,6 +14,8 @@
 #   - Agenda o cron que executa AVP-POL (que decide se chama AVP-ENG)
 #
 # CHANGELOG
+# - v1.1.15 (2026-02-15)
+# * FIX: recria /root/.ssh -> /jffs/.ssh no boot (GitHub ssh -T puro) antes do boot settle
 # - v1.1.14 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
 # - v1.1.13 (2026-01-26)
@@ -67,7 +69,7 @@
 #   * BASE: cron inicial do failover multi-dispositivo
 # =============================================================
 
-SCRIPT_VER="v1.1.14"
+SCRIPT_VER="v1.1.15"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -222,6 +224,17 @@ else
     logger -t AVP-BOOT "Entware: SUSPEITO (opkg nao executavel em /opt) (src=$ENT_ROOT)"
   fi
 fi
+# --- SSH HOME FIX (GitHub) - pre boot settle ---
+[ -d /jffs/.ssh ] || mkdir -p /jffs/.ssh 2>/dev/null || :
+chmod 700 /jffs/.ssh 2>/dev/null || :
+if [ -d /root/.ssh ] && [ ! -L /root/.ssh ]; then
+  rm -rf /root/.ssh 2>/dev/null || :
+fi
+[ -L /root/.ssh ] || ln -sf /jffs/.ssh /root/.ssh 2>/dev/null || :
+[ -f /jffs/.ssh/known_hosts ] && chmod 600 /jffs/.ssh/known_hosts 2>/dev/null || :
+[ -f /jffs/.ssh/authorized_keys ] && chmod 600 /jffs/.ssh/authorized_keys 2>/dev/null || :
+[ -f /jffs/.ssh/id_ed25519 ] && chmod 600 /jffs/.ssh/id_ed25519 2>/dev/null || :
+[ -f /jffs/.ssh/id_ed25519.pub ] && chmod 644 /jffs/.ssh/id_ed25519.pub 2>/dev/null || :
 # Aguarda o sistema estabilizar após boot
 sleep 60
 
