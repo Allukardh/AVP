@@ -4,7 +4,7 @@
 # Component : AVP-APPLY
 # File      : avp-apply.sh
 # Role      : Patch runner (smoke pre/patch-check/post + git apply) with session-safe background execution
-# Version : v1.0.24 (2026-01-26)
+# Version   : v1.0.25 (2026-02-14)
 # Status    : stable
 # =============================================================
 #
@@ -71,7 +71,7 @@
 #   * ADD   : modo background default + --fg opcional
 # =============================================================
 
-SCRIPT_VER="v1.0.24"
+SCRIPT_VER="v1.0.25"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -290,6 +290,19 @@ fi
   "$SMOKE" --post || exit 22
 
   log "== AVP-APPLY OK =="
+
+  # ---------------------------------------------------
+  # Registro de contexto 3B para commit.sh
+  FILES="$(git diff --name-only)"
+  if [ -z "$FILES" ]; then
+    log "APPLY-CONTEXT: nenhum arquivo modificado detectado apos o apply."
+  else
+    echo "$FILES" > /tmp/avp_last_apply_files.list
+    echo "OK" > /tmp/avp_last_apply.ok
+    log "APPLY-CONTEXT: contexto 3B registrado em /tmp/avp_last_apply_files.list"
+  fi
+  # ---------------------------------------------------
+
   exit 0
 }
 
