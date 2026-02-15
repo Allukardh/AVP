@@ -2,7 +2,7 @@
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-COMMIT
-# File      : commit.sh
+# File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
 # Version   : v1.0.0 (2026-02-14)
 # Status    : stable
