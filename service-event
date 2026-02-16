@@ -24,7 +24,6 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.3"
-
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 export GIT_PAGER=cat PAGER=cat
 hash -r 2>/dev/null || true
@@ -79,11 +78,13 @@ write_last() {
   [ -n "${src:-}" ] || return 1
   mkdir -p "/www/user" "/tmp/var/wwwext" 2>/dev/null || true
 
-  cp -f "$src" "$LAST_WWW" 2>/dev/null || return 1
-  chmod 0644 "$LAST_WWW" 2>/dev/null || true
+  cp -f "$src" "$LAST_SSOT" 2>/dev/null || return 1
+  chmod 0644 "$LAST_SSOT" 2>/dev/null || true
 
-  cp -f "$src" "$LAST_TMP" 2>/dev/null || true
-  chmod 0644 "$LAST_TMP" 2>/dev/null || true
+  rm -f "$LAST_WWW" "$LAST_TMP" 2>/dev/null || true;
+  ln -sf "$LAST_SSOT" "$LAST_WWW" 2>/dev/null || cp -f "$LAST_SSOT" "$LAST_WWW" 2>/dev/null || true;
+  ln -sf "$LAST_SSOT" "$LAST_TMP" 2>/dev/null || cp -f "$LAST_SSOT" "$LAST_TMP" 2>/dev/null || true;
+  chmod 0644 "$LAST_WWW" "$LAST_TMP" 2>/dev/null || true
   return 0
 }
 
@@ -125,9 +126,9 @@ parse_device_contract() {
 ensure_monotonic_ts() {
   tmpf="${1:-}"
   [ -n "${tmpf:-}" ] || return 1
-  [ -f "$LAST_WWW" ] || return 0
+  [ -f "$LAST_SSOT" ] || return 0
 
-  old_ts="$(sed -n "s/.*\"ts\":\([0-9][0-9]*\).*/\1/p" "$LAST_WWW" 2>/dev/null | head -n 1)"
+  old_ts="$(sed -n "s/.*\"ts\":\([0-9][0-9]*\).*/\1/p" "$LAST_SSOT" 2>/dev/null | head -n 1)"
   new_ts="$(sed -n "s/.*\"ts\":\([0-9][0-9]*\).*/\1/p" "$tmpf" 2>/dev/null | head -n 1)"
 
   case "${old_ts:-}" in ""|*[!0-9]*) old_ts=0;; esac
@@ -148,6 +149,21 @@ run_action() {
   profile="$(trim "${3:-}")"
   device="$(trim "${4:-}")"
   payload="$(trim "${5:-}")"
+
+  # --- AUTO TOKEN (backend) ---
+  if [ -z "${token:-}" ]; then
+    case "$action" in
+      status|snapshot|reload|bootstrap|token_get) : ;;
+      *)
+        tok_tmp="/tmp/avp_webui_tok.$$.$(ts_s)";
+        tok_err="${tok_tmp}.err";
+        "$ACT" action=token_get >"$tok_tmp" 2>"$tok_err" || true;
+        token="$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$tok_tmp" 2>/dev/null | head -n 1)";
+        rm -f "$tok_tmp" "$tok_err" 2>/dev/null || true;
+        if [ -n "${token:-}" ]; then nvram set avp_webui_token="$token" 2>/dev/null || true; fi
+        ;;
+    esac
+  fi
 
   # aliases (frontend -> backend)
   case "$action" in
