@@ -4,11 +4,25 @@
 # Component : AVP-CLI
 # File      : avp-cli.sh
 # Role      : Machine-readable status for WebUI/automation (JSON canon + KV fallback)
-# Version   : v1.0.13 (2026-01-27)
+# Version   : v1.0.18 (2026-02-16)
 # Status    : C1 (initial)
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.18 (2026-02-16)
+# * FIX: JSON agora realmente inclui "route" por device (alias de "table") — compat WebUI
+# * DOC: help/hint incluem --json (alias do default)
+# - v1.0.17 (2026-02-16)
+# * FIX: JSON agora inclui "route" por device (alias de "table") — compat WebUI
+# * FIX: status aceita --json (alias do default; remove cli.unknown_flag)
+# - v1.0.16 (2026-02-16)
+# * FIX: status aceita --json (alias do default; remove cli.unknown_flag)
+# * FIX: JSON injeta "route" como alias de "table" (pós-processamento seguro)
+# - v1.0.15 (2026-02-16)
+# * FIX: JSON agora expõe "route" (alias de "table") por device (compat WebUI)
+# * FIX: cmd status aceita --json (alias do modo default; remove cli.unknown_flag)
+# - v1.0.14 (2026-02-16)
+# * FIX: adiciona "route" (alias de "table") no JSON/KV p/ compat da coluna Route na WebUI
 # - v1.0.13 (2026-01-27)
 #   * CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 # - v1.0.12 (2026-01-27)
@@ -43,7 +57,7 @@
 #   * SAFETY: nunca falha por ausencia de dependencias/policy; sempre retorna JSON valido
 # =============================================================
 
-SCRIPT_VER="v1.0.13"
+SCRIPT_VER="v1.0.18"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -80,8 +94,8 @@ err_meta() {
     global.enabled_invalid) echo "WARN|verifique AUTOVPN_ENABLED em $GLOBAL_CONF";;
     global.profile_invalid) echo "WARN|verifique AUTOVPN_PROFILE em $GLOBAL_CONF";;
     devices.conf_missing) echo "WARN|crie $DEVICES_CONF";;
-    cli.unknown_flag) echo "ERR|use: $0 status [--pretty|--kv]";;
-    cli.unknown_command) echo "ERR|use: $0 status [--pretty|--kv]";;
+    cli.unknown_flag) echo "ERR|use: $0 status [--json|--pretty|--kv]";;
+    cli.unknown_command) echo "ERR|use: $0 status [--json|--pretty|--kv]";;
     *) echo "ERR|verifique logs e configs";;
   esac
 }
@@ -202,7 +216,7 @@ build_json_status() {
       lse="$(get_state_kv "$S" "last_switch_epoch")"; [ -z "${lse:-}" ] && lse=""
 
       obj="{\"label\":\"$(json_escape "$L")\",\"ip\":\"$(json_escape "$I")\",\"pref\":\"$(json_escape "$P")\","
-      obj="${obj}\"state\":\"$(json_escape "$mode")\",\"table\":\"$(json_escape "${table:-}")\","
+      obj="${obj}\"state\":\"$(json_escape "$mode")\",\"route\":\"$(json_escape "${table:-}")\",\"table\":\"$(json_escape "${table:-}")\","
       obj="${obj}\"last_switch_epoch\":\"$(json_escape "${lse:-}")\"}"
 
       if [ "$first" -eq 1 ]; then
@@ -271,6 +285,7 @@ build_kv_status() {
       printf "device_%s_pref=%s\n" "$SL" "$P"
       printf "device_%s_state=%s\n" "$SL" "$mode"
       printf "device_%s_table=%s\n" "$SL" "${table:-}"
+      printf "device_%s_route=%s\n" "$SL" "${table:-}"
       printf "device_%s_last_switch_epoch=%s\n" "$SL" "${lse:-}"
     done <"$_tmp"
   fi
@@ -285,7 +300,7 @@ build_kv_status() {
 show_help() {
   cat <<'HELP_EOF'
 Usage:
-  avp-cli.sh status [--pretty|--kv]
+  avp-cli.sh status [--json|--pretty|--kv]
 
 Modes:
   status           JSON compacto (canonico, machine-friendly)
@@ -301,7 +316,7 @@ cmd_status() {
   load_devices_from_conf
 
   case "$mode" in
-    "" ) build_json_status; return 0 ;;
+    ""|"--json" ) build_json_status; return 0 ;;
     "--kv" ) build_kv_status; return 0 ;;
     "--pretty" )
       if command -v jq >/dev/null 2>&1; then

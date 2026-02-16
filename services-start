@@ -4,7 +4,7 @@
 # Component : AVP-BOOT
 # File      : services-start
 # Role      : Boot / Startup hooks (cron + Entware /opt bind)
-# Version : v1.1.18 (2026-02-15)
+# Version : v1.1.19 (2026-02-16)
 # Status    : stable
 # =============================================================
 #
@@ -14,6 +14,9 @@
 #   - Agenda o cron que executa AVP-POL (que decide se chama AVP-ENG)
 #
 # CHANGELOG
+# - v1.1.19 (2026-02-16)
+# * FIX: WebUI SSOT em /jffs/scripts/avp/www (remove confusao com /jffs/addons)
+# * FIX: garante /www/user antes do symlink avp-action-last.json (race no boot)
 # - v1.1.18 (2026-02-15)
 #   * FIX: remove duplicacao do pre-populate known_hosts (mantem apenas o bloco deterministico)
 # - v1.1.17 (2026-02-15)
@@ -77,7 +80,7 @@
 #   * BASE: cron inicial do failover multi-dispositivo
 # =============================================================
 
-SCRIPT_VER="v1.1.18"
+SCRIPT_VER="v1.1.19"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -286,10 +289,10 @@ cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
   mkdir -p /www/user 2>/dev/null
 
   # WebUI page
-  [ -f /jffs/addons/avp/www/avp.asp ] && ln -sf /jffs/addons/avp/www/avp.asp /www/user/avp.asp
+  [ -f /jffs/scripts/avp/www/avp.asp ] && ln -sf /jffs/scripts/avp/www/avp.asp /www/user/avp.asp
 
-  # JSON (se existir em /jffs/addons/avp/www, expõe em /www/user também)
-  ln -sf /jffs/addons/avp/www/avp-status.json /www/user/avp-status.json 2>/dev/null
+  # JSON (se existir em /jffs/scripts/avp/www, expõe em /www/user também)
+  ln -sf /jffs/scripts/avp/www/avp-status.json /www/user/avp-status.json 2>/dev/null
 
   # sobe feeder (idempotente)
   [ -x /jffs/scripts/avp-webui-feed.sh ] && /jffs/scripts/avp-webui-feed.sh start >/dev/null 2>&1
@@ -301,16 +304,19 @@ cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
 
 # Ensure last-action JSON exists at boot
 BOOT_TS="$(date +%s)"
-BOOT_JSON="/jffs/addons/avp/www/avp-action-last.json"
+BOOT_JSON="/jffs/scripts/avp/www/avp-action-last.json"
 
 if [ ! -s "${BOOT_JSON}" ]; then
   echo "{\"ok\":true,\"rc\":0,\"action\":\"bootstrap\",\"msg\":\"boot init\",\"ts\":${BOOT_TS}}" > "${BOOT_JSON}"
 fi
 
 # Ensure WebUI symlink
+mkdir -p /www/user 2>/dev/null || :
 ln -sf "${BOOT_JSON}" /www/user/avp-action-last.json
 
 # Trigger action pipeline once (state sync)
 if [ -x /jffs/scripts/service-event ]; then
   /jffs/scripts/service-event restart avp_webui_restart >/dev/null 2>&1
 fi
+
+exit 0

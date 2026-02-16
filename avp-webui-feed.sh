@@ -4,11 +4,14 @@
 # Component : AVP-WEBUI Feeder
 # File      : avp-webui-feed.sh
 # Role      : WebUI JSON status feed (exporter)
-# Version   : v1.2.15 (2026-01-27)
+# Version   : v1.2.16 (2026-02-16)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.2.16 (2026-02-16)
+# * FIX: OUT SSOT em /jffs/scripts/avp/www
+# * FIX: start do feeder daemoniza corretamente (redirect >/dev/null 2>&1 &)
 # - v1.2.15 (2026-01-27)
 #   * HARDEN: trap cleanup do LOCK/PID no loop (EXIT/INT/TERM); reduz lock preso em stop/kill.
 # - v1.2.14 (2026-01-26)
@@ -34,13 +37,13 @@
 #   * FIX: reintroduz anti-orphan no start() após gravar LOCK/pid (impede duplicidade e protege o próprio start)
 # =============================================================
 
-SCRIPT_VER="v1.2.15"
+SCRIPT_VER="v1.2.16"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
 CLI="/jffs/scripts/avp-cli.sh"
-OUT="/jffs/addons/avp/www/avp-status.json"
+OUT="/jffs/scripts/avp/www/avp-status.json"
 
 PID="/tmp/avp_webui_feed.pid"
 LOCK="/tmp/avp_webui_feed.lock"   # lockdir atômico (mkdir)
