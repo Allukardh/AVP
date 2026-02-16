@@ -298,6 +298,8 @@ CHANGELOG
 const LAST_ACTION = "/user/avp-action-last.json";
 let lastStatusEnabled = null;
 let lastActionTs = null;
+var t = "";
+
 
 function toast(msg, level){
   const el = $("toast");
@@ -311,10 +313,8 @@ function toast(msg, level){
 }
 
 function syncTokenUi(){
-  var t = document.getElementById("token");
-  if (!t) { return; }
 
-  if ($("token")) $("token").value = t;
+  if ($("token")) $("token").value = (typeof t === "string" ? t : String(t||""));
 }
 
 async function loadLastAction(forceToast){

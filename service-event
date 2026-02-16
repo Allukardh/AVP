@@ -31,7 +31,15 @@ hash -r 2>/dev/null || true
 
 LOGP="/tmp/avp_logs/avp_webui_action.log"
 LAST_WWW="/www/user/avp-action-last.json"
+LAST_SSOT="/jffs/scripts/avp/www/avp-action-last.json"
+
 LAST_TMP="/tmp/var/wwwext/avp-action-last.json"
+# --- AVP SSOT: last action JSON (canonical) ---
+# escreve primeiro no SSOT e garante /www/user como symlink
+if [ -n "${LAST_SSOT:-}" ]; then
+  mkdir -p "$(dirname "$LAST_SSOT")" 2>/dev/null || true
+fi
+
 ACT="/jffs/scripts/avp-action.sh"
 POL="/jffs/scripts/avp-pol.sh"
 
@@ -271,3 +279,5 @@ main() {
 }
 
 main "$@"
+
+exit 0
