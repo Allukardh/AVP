@@ -3,15 +3,13 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-BOOT
 # File      : services-start
-# Version   : v1.1.20 (2026-02-16)
+# Version   : v1.1.21 (2026-02-16)
 # Status    : stable
 # =============================================================
 #
-# PURPOSE
-#   Boot-time scheduler wiring for AVP.
-#   - Agenda o cron que executa AVP-POL (que decide se chama AVP-ENG)
-#
 # CHANGELOG
+# - v1.1.21 (2026-02-16)
+# * FIX: restaura linhas do CHANGELOG historico (v1.1.10/v1.1.9/v1.0.3/v1.0.2) que regrediram
 # - v1.1.20 (2026-02-16)
 # * CHG: delega a montagem do Entware ao AMTM (mount-entware.mod) via post-mount; remove vestigios do legacy mount-fix
 # - v1.1.19 (2026-02-16)
@@ -36,6 +34,7 @@
 # - v1.1.11 (2026-01-18)
 #   * POLISH: padroniza SCRIPT_VER + set -u (ordem oficial) e remove linhas em branco desnecessarias
 # - v1.1.10 (2026-01-17)
+# * POLISH: logs do Entware mais cirurgicos (detectado + rc do bind + suspeito com src)
 # - v1.1.9 (2026-01-17)
 # - v1.1.8 (2026-01-16)
 #   * FIX: AVP-ENG-ROTATE fica com 1 linha canonica (payload-var + aspas seguras), removendo duplicacoes/quoting quebrado
@@ -69,6 +68,7 @@
 # - v1.0.4 (2025-12-23)
 #   * FIX: remove dependencia de mountpoint (Merlin-safe) via /proc/mounts
 # - v1.0.3 (2025-12-23)
+# * FIX: aguarda Entware REAL ficar pronto (opkg executavel) antes de prosseguir
 # - v1.0.2 (2025-12-23)
 # - v1.0.1 (2025-12-20)
 #   * CHG: cron chama AVP-POL (--run) em vez de AVP-ENG direto
@@ -76,7 +76,7 @@
 #   * BASE: cron inicial do failover multi-dispositivo
 # =============================================================
 
-SCRIPT_VER="v1.1.20"
+SCRIPT_VER="v1.1.21"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
