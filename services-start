@@ -3,11 +3,13 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-BOOT
 # File      : services-start
-# Version   : v1.1.21 (2026-02-16)
+# Version   : v1.1.22 (2026-02-16)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.1.22 (2026-02-16)
+# * FIX: restaura bullets do CHANGELOG historico (v1.1.9/v1.1.8/v1.0.2/v1.0.1) que regrediram
 # - v1.1.21 (2026-02-16)
 # * FIX: restaura linhas do CHANGELOG historico (v1.1.10/v1.1.9/v1.0.3/v1.0.2) que regrediram
 # - v1.1.20 (2026-02-16)
@@ -36,6 +38,7 @@
 # - v1.1.10 (2026-01-17)
 # * POLISH: logs do Entware mais cirurgicos (detectado + rc do bind + suspeito com src)
 # - v1.1.9 (2026-01-17)
+# * FIX: Entware autodetect em /tmp/mnt/* (robusto a label/nome do mount) + bind /tmp/opt
 # - v1.1.8 (2026-01-16)
 #   * FIX: AVP-ENG-ROTATE fica com 1 linha canonica (payload-var + aspas seguras), removendo duplicacoes/quoting quebrado
 # - v1.1.7 (2026-01-16)
@@ -70,13 +73,14 @@
 # - v1.0.3 (2025-12-23)
 # * FIX: aguarda Entware REAL ficar pronto (opkg executavel) antes de prosseguir
 # - v1.0.2 (2025-12-23)
+# * ADD: montagem persistente do Entware em /opt via bind mount (USB)
 # - v1.0.1 (2025-12-20)
 #   * CHG: cron chama AVP-POL (--run) em vez de AVP-ENG direto
 # - v1.0.0 (2025-12-20)
 #   * BASE: cron inicial do failover multi-dispositivo
 # =============================================================
 
-SCRIPT_VER="v1.1.21"
+SCRIPT_VER="v1.1.22"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
