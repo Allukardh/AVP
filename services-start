@@ -3,17 +3,17 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-BOOT
 # File      : services-start
-# Role      : Boot / Startup hooks (cron + Entware /opt bind)
-# Version : v1.1.19 (2026-02-16)
+# Version   : v1.1.20 (2026-02-16)
 # Status    : stable
 # =============================================================
 #
 # PURPOSE
 #   Boot-time scheduler wiring for AVP.
-#   - Mantem /opt persistente via bind mount do Entware (USB)
 #   - Agenda o cron que executa AVP-POL (que decide se chama AVP-ENG)
 #
 # CHANGELOG
+# - v1.1.20 (2026-02-16)
+# * CHG: delega a montagem do Entware ao AMTM (mount-entware.mod) via post-mount; remove vestigios do legacy mount-fix
 # - v1.1.19 (2026-02-16)
 # * FIX: WebUI SSOT em /jffs/scripts/avp/www (remove confusao com /jffs/addons)
 # * FIX: garante /www/user antes do symlink avp-action-last.json (race no boot)
@@ -36,9 +36,7 @@
 # - v1.1.11 (2026-01-18)
 #   * POLISH: padroniza SCRIPT_VER + set -u (ordem oficial) e remove linhas em branco desnecessarias
 # - v1.1.10 (2026-01-17)
-#   * POLISH: logs do Entware mais cirurgicos (detectado + rc do bind + suspeito com src)
 # - v1.1.9 (2026-01-17)
-#   * FIX: Entware autodetect em /tmp/mnt/* (robusto a label/nome do mount) + bind /tmp/opt
 # - v1.1.8 (2026-01-16)
 #   * FIX: AVP-ENG-ROTATE fica com 1 linha canonica (payload-var + aspas seguras), removendo duplicacoes/quoting quebrado
 # - v1.1.7 (2026-01-16)
@@ -71,16 +69,14 @@
 # - v1.0.4 (2025-12-23)
 #   * FIX: remove dependencia de mountpoint (Merlin-safe) via /proc/mounts
 # - v1.0.3 (2025-12-23)
-#   * FIX: aguarda Entware REAL ficar pronto (opkg executavel) antes de prosseguir
 # - v1.0.2 (2025-12-23)
-#   * ADD: montagem persistente do Entware em /opt via bind mount (USB)
 # - v1.0.1 (2025-12-20)
 #   * CHG: cron chama AVP-POL (--run) em vez de AVP-ENG direto
 # - v1.0.0 (2025-12-20)
 #   * BASE: cron inicial do failover multi-dispositivo
 # =============================================================
 
-SCRIPT_VER="v1.1.19"
+SCRIPT_VER="v1.1.20"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -88,7 +84,6 @@ set -u
 #
 # --- PERMS HARDEN (AVP) — non-blocking ---
 avp_fix_perms() {
-  # Merlin-puro: este bloco NAO depende de /opt (Entware)
   export PATH="/usr/bin:/usr/sbin:/bin:/sbin:/jffs/scripts:${PATH:-}"
 
   # idempotente: aplicar chmod nao muda conteudo; nunca bloqueia boot
@@ -150,98 +145,10 @@ fi
 avp_fix_perms
 
 #
-# ENTWARE MOUNT FIX (PERSISTENTE) — comentario importante
-#
-# CONTEXTO
-#   Em Asuswrt-Merlin, /opt aponta para RAM:
-#     /opt -> /tmp/opt
-#   Logo, tudo em /opt some apos reboot/limpeza do /tmp.
-#
-# OBJETIVO
-#   Garantir que /tmp/opt aponte para o opt REAL do USB (Entware),
-#   com checagens para evitar race/timing da montagem.
-#
-
-# Helper: mount check sem util-linux (Merlin-safe)
-
-is_mounted() {
-  # usage: is_mounted "<path>"
-  grep -qs " $1 " /proc/mounts
-}
-
-OPT_REAL="/tmp/opt"
-
-# Autodetect do Entware (robusto a label/nome do mount em /tmp/mnt)
-# Procura opkg em:
-#   - /tmp/mnt/<X>/entware/(bin|sbin)/opkg
-#   - /tmp/mnt/<X>/(bin|sbin)/opkg
-find_entware_root() {
-  for d in /tmp/mnt/*; do
-    [ -d "$d" ] || continue
-
-    # Preferencia: subpasta entware
-    if [ -x "$d/entware/bin/opkg" ] || [ -x "$d/entware/sbin/opkg" ]; then
-      echo "$d/entware"
-      return 0
-    fi
-
-    # Fallback: entware na raiz do mount
-    if [ -x "$d/bin/opkg" ] || [ -x "$d/sbin/opkg" ]; then
-      echo "$d"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# 1) Espera o Entware aparecer em /tmp/mnt/* (até 30s)
-i=0
-ENT_ROOT=""
-while [ $i -lt 30 ] && [ -z "$ENT_ROOT" ]; do
-  ENT_ROOT="$(find_entware_root 2>/dev/null)"
-  [ -n "$ENT_ROOT" ] && break
-  sleep 1
-  i=$((i+1))
-done
-
-# Se não achou, segue (não bloqueia boot)
-if [ -z "$ENT_ROOT" ]; then
-  logger -t AVP-BOOT "Entware: nao encontrado em /tmp/mnt/* (skip /opt)"
-else
-  # Loga o caminho escolhido (diagnostico)
-  logger -t AVP-BOOT "Entware: detectado em $ENT_ROOT"
-
-  mkdir -p "$OPT_REAL"
-
-  # Monta apenas se ainda nao estiver montado
-  if ! is_mounted "$OPT_REAL"; then
-    mount --bind "$ENT_ROOT" "$OPT_REAL" 2>/dev/null
-    rc=$?
-    if [ $rc -ne 0 ]; then
-      mount -o bind "$ENT_ROOT" "$OPT_REAL"
-      rc=$?
-    fi
-    if [ $rc -ne 0 ]; then
-      logger -t AVP-BOOT "Entware: FAIL bind rc=$rc (src=$ENT_ROOT dst=$OPT_REAL)"
-    fi
-  fi
-
-  export PATH="/opt/bin:/opt/sbin:$PATH"
-
-  # Checagem pos-mount: /opt funcional?
-  if [ -x /opt/bin/opkg ] || [ -x /opt/sbin/opkg ]; then
-    logger -t AVP-BOOT "Entware: OK ($ENT_ROOT -> /opt)"
-  else
-    logger -t AVP-BOOT "Entware: SUSPEITO (opkg nao executavel em /opt) (src=$ENT_ROOT)"
-  fi
-fi
-
-
 KH="/jffs/.ssh/known_hosts"
 [ -f "$KH" ] || : >"$KH" 2>/dev/null || :
 chmod 600 "$KH" 2>/dev/null || :
 
-# OpenSSH (Entware): registra hostkey automaticamente na 1a vez (sem prompt)
 # non-blocking: timeout curto; ignora rc (GitHub retorna 1 no -T)
 if [ -x /opt/bin/ssh ] && [ -f /jffs/.ssh/id_ed25519 ]; then
   /opt/bin/ssh \
