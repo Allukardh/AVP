@@ -311,6 +311,9 @@ function toast(msg, level){
 }
 
 function syncTokenUi(){
+  var t = document.getElementById("token");
+  if (!t) { return; }
+
   if ($("token")) $("token").value = t;
 }
 
