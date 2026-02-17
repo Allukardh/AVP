@@ -4,11 +4,13 @@
 # Component : AVP-WEBUI
 # File      : service-event
 # Role      : Firmware hook for WebUI Console actions (rc_service -> avp-action.sh)
-# Version   : v1.0.4 (2026-02-16)
+# Version : v1.0.5 (2026-02-17)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.5 (2026-02-17)
+# * CHG: atualiza ACT/POL p/ nova estrutura (avp/bin) (hook usa caminho absoluto)
 # - v1.0.4 (2026-02-16)
 #   * FIX: WebUI backend SSOT last-action (write SSOT + /www/user symlink)
 #   * FIX: ensure_monotonic_ts usa SSOT (evita break no polling)
@@ -27,10 +29,10 @@
 #   * ADD: alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
 # =============================================================
 
-SCRIPT_VER="v1.0.4"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
-export GIT_PAGER=cat PAGER=cat
+SCRIPT_VER="v1.0.5"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
+set -u
 
 LOGP="/tmp/avp_logs/avp_webui_action.log"
 LAST_WWW="/www/user/avp-action-last.json"
@@ -43,8 +45,8 @@ if [ -n "${LAST_SSOT:-}" ]; then
   mkdir -p "$(dirname "$LAST_SSOT")" 2>/dev/null || true
 fi
 
-ACT="/jffs/scripts/avp-action.sh"
-POL="/jffs/scripts/avp-pol.sh"
+ACT="/jffs/scripts/avp/bin/avp-action.sh"
+POL="/jffs/scripts/avp/bin/avp-pol.sh"
 
 ts_h() { date '+%Y-%m-%d %H:%M:%S'; }
 ts_s() { date +%s; }

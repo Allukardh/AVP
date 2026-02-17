@@ -4,11 +4,13 @@
 # Component : AVP-BOOT
 # File      : post-mount
 # Role      : post-mount helper (delegate Entware mount to AMTM)
-# Version   : v1.0.7 (2026-02-16)
+# Version : v1.0.8 (2026-02-17)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.8 (2026-02-17)
+# * CHG: inclui /jffs/scripts/avp/bin no PATH (consistência do hook)
 # - v1.0.7 (2026-02-16)
 #   * CHG: delega montagem do Entware para /jffs/addons/amtm/mount-entware.mod (padrão AMTM)
 # - v1.0.6 (2026-01-26)
@@ -27,8 +29,8 @@
 #   * BASE: bind mount do Entware para /opt no evento post-mount
 # =============================================================
 
-SCRIPT_VER="v1.0.7"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+SCRIPT_VER="v1.0.8"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
