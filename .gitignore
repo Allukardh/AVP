@@ -1,28 +1,11 @@
-# AVP runtime (nao versionar)
-avp/logs/
-avp/state/
-avp/cache/
+# =========================
+# AVP repo ignore rules
+# =========================
 
-# Backups runtime
-backups/
-# temporarios
+# temp / patch artifacts
 *.bak
 *.tmp
 *~
-# Legado runtime (nao versionar)
-logs/
-# AVP runtime policy (local environment)
-autovpn/
-#VP local backups (gerados durante debug/patch)
-*.bak.*
-*.bak_*
-*.bak_pre_*
-# AVP WebUI (canonical file tracked; rest runtime)
-avp/*
-!avp/
-!avp/www/
-avp/www/*
-!avp/www/avp.asp
 *.new
 *.patch
 *.rej
@@ -34,3 +17,42 @@ Thumbs.db
 nohup.out
 core
 core.*
+
+# legacy (nao usar mais)
+autovpn/
+logs/
+backups/
+
+# -------------------------
+# AVP canonical tree (TRACK)
+# -------------------------
+# code + config
+!avp/
+!avp/bin/
+!avp/bin/*
+!avp/lib/
+!avp/lib/*
+!avp/policy/
+!avp/policy/*
+!avp/docs/
+!avp/docs/*
+!avp/changelog/
+!avp/changelog/*
+!avp/www/
+!avp/www/*
+!avp/www/avp.asp
+
+# -------------------------
+# AVP runtime (IGNORE)
+# -------------------------
+avp/cache/
+avp/www/*.json
+
+avp/logs/*
+!avp/logs/.keep
+
+avp/state/*
+!avp/state/.keep
+
+avp/backups/*
+!avp/backups/.keep
