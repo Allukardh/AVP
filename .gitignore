@@ -56,3 +56,21 @@ avp/state/*
 
 avp/backups/*
 !avp/backups/.keep
+
+
+# --- AVP canonical tree (TRACK ONLY CODE DIRS) ---
+# Regra base no arquivo ignora avp/* (tudo). Abaixo liberamos somente o que será versionado.
+
+!avp/bin/
+!avp/bin/**
+
+!avp/lib/
+!avp/lib/**
+
+!avp/www/
+!avp/www/**
+
+!avp/changelog/
+!avp/changelog/**
+
+# O resto permanece ignorado (policy/state/logs/backups/docs etc.)

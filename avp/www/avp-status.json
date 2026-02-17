@@ -1,0 +1,1 @@
+{"enabled":0,"profile":"n/a","devices":[],"errors":["cli_missing_or_not_executable"],"err":{"level":"ERR","code":"cli_missing_or_not_executable","where":"FEED","hint":"verifique permissões/arquivo em /jffs/scripts/avp-cli.sh"}}
