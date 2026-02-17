@@ -3,11 +3,13 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-BOOT
 # File      : services-start
-# Version   : v1.1.22 (2026-02-16)
+# Version : v1.1.23 (2026-02-17)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.1.23 (2026-02-17)
+# * CHG: remove PERMS HARDEN (auto-chmod) + modo --perms-only (não necessário)
 # - v1.1.22 (2026-02-16)
 # * FIX: restaura bullets do CHANGELOG historico (v1.1.9/v1.1.8/v1.0.2/v1.0.1) que regrediram
 # - v1.1.21 (2026-02-16)
@@ -80,73 +82,10 @@
 #   * BASE: cron inicial do failover multi-dispositivo
 # =============================================================
 
-SCRIPT_VER="v1.1.22"
+SCRIPT_VER="v1.1.23"
 export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
-
-#
-# --- PERMS HARDEN (AVP) — non-blocking ---
-avp_fix_perms() {
-  export PATH="/usr/bin:/usr/sbin:/bin:/sbin:/jffs/scripts:${PATH:-}"
-
-  # idempotente: aplicar chmod nao muda conteudo; nunca bloqueia boot
-  # 0755: scripts executaveis
-  for f in \
-    "/jffs/scripts/services-start" \
-    "/jffs/scripts/avp-smoke.sh" \
-    "/jffs/scripts/avp-action.sh" \
-    "/jffs/scripts/avp-apply.sh" \
-    "/jffs/scripts/avp-backup.sh" \
-    "/jffs/scripts/avp-cli.sh" \
-    "/jffs/scripts/avp-diag.sh" \
-    "/jffs/scripts/avp-eng.sh" \
-    "/jffs/scripts/avp-pol.sh" \
-    "/jffs/scripts/avp-pol-cron.sh" \
-    "/jffs/scripts/avp-webui.sh" \
-    "/jffs/scripts/avp-webui-feed.sh" \
-    "/jffs/scripts/post-mount" ; do
-    [ -e "$f" ] || continue
-    chmod 0755 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0755 $f"
-  done
-
-  # 0644: codigo/assets nao-sensiveis
-  for f in \
-    "/jffs/scripts/avp-lib.sh" \
-    "/jffs/scripts/.gitignore" \
-    "/jffs/scripts/avp/www/avp.asp" \
-    "/jffs/scripts/avp/www/avp-status.json" \
-    "/jffs/scripts/logs/avp_events.log" ; do
-    [ -e "$f" ] || continue
-    chmod 0644 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0644 $f"
-  done
-
-  # 0600: policy/state sensiveis
-  # policy (fixo)
-  for f in \
-    "/jffs/scripts/autovpn/policy/devices.conf" \
-    "/jffs/scripts/autovpn/policy/global.conf" ; do
-    [ -e "$f" ] || continue
-    chmod 0600 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0600 $f"
-  done
-
-  # state (dinamico: devices/labels mudam via devices.conf/GUI)
-  for f in /jffs/scripts/avp/state/*; do
-    [ -e "$f" ] || continue
-    [ -f "$f" ] || continue
-    chmod 0600 "$f" 2>/dev/null || logger -t AVP-BOOT "PERMS: FAIL chmod 0600 $f"
-  done
-}
-
-# modo manual (sem mexer em cron/webui):
-#   sh /jffs/scripts/services-start --perms-only
-if [ "${1:-}" = "--perms-only" ]; then
-  avp_fix_perms
-  exit 0
-fi
-
-# aplica no boot (nao bloqueia)
-avp_fix_perms
 
 #
 KH="/jffs/.ssh/known_hosts"
