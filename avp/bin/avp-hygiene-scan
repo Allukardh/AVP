@@ -1,0 +1,101 @@
+#!/opt/bin/python3
+from __future__ import annotations
+
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-UTIL
+# File      : avp-hygiene-scan
+# Role      : Hygiene scan (trailing WS / long blank runs / suspects)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+
+SCRIPT_VER="v2.0.0"
+
+import argparse
+import re
+import sys
+from pathlib import Path
+from typing import List, Tuple
+
+def find_trailing_ws(lines: List[str]) -> List[Tuple[int,str]]:
+    out=[]
+    for i,ln in enumerate(lines, start=1):
+        if ln.rstrip("\n").endswith((" ", "\t")):
+            out.append((i, ln.rstrip("\n")))
+    return out
+
+def find_blank_runs(lines: List[str], min_run: int = 3) -> List[Tuple[int,int]]:
+    runs=[]
+    start=None
+    for i,ln in enumerate(lines, start=1):
+        blank = (ln.strip() == "")
+        if blank and start is None:
+            start=i
+        if (not blank) and start is not None:
+            end=i-1
+            if end-start+1 >= min_run:
+                runs.append((start,end))
+            start=None
+    if start is not None:
+        end=len(lines)
+        if end-start+1 >= min_run:
+            runs.append((start,end))
+    return runs
+
+def find_suspects(lines: List[str]) -> List[Tuple[int,str]]:
+    out=[]
+    rx = re.compile(r"(TODO|FIXME|HACK|XXX|DEBUG|WIP|temporar|gambiarra|legacy)", re.IGNORECASE)
+    for i,ln in enumerate(lines, start=1):
+        s=ln.rstrip("\n")
+        if rx.search(s):
+            out.append((i,s))
+    return out
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(prog="avp-hygiene-scan")
+    ap.add_argument("file", nargs="?", default="", help="arquivo alvo")
+    ns = ap.parse_args(argv)
+
+    if not ns.file:
+        print("Usage: avp-hygiene-scan <file>")
+        return 2
+
+    p = Path(ns.file)
+    if not p.exists():
+        print(f"ERR: file nao existe: {p}")
+        return 1
+
+    txt = p.read_text(encoding="utf-8", errors="replace")
+    lines = txt.splitlines(True)
+
+    print(f"== HYGIENE SCAN == {p}")
+
+    tws = find_trailing_ws(lines)
+    if tws:
+        print("== trailing whitespace ==")
+        for i,s in tws[:200]:
+            print(f"L{i}: {s}")
+    else:
+        print("== trailing whitespace == OK")
+
+    runs = find_blank_runs(lines, min_run=3)
+    if runs:
+        print("== long blank runs (>=3) ==")
+        for a,b in runs[:100]:
+            print(f"L{a}-L{b}")
+    else:
+        print("== long blank runs == OK")
+
+    sus = find_suspects(lines)
+    if sus:
+        print("== suspects (TODO/FIXME/etc) ==")
+        for i,s in sus[:200]:
+            print(f"L{i}: {s}")
+    else:
+        print("== suspects == OK")
+
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

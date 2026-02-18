@@ -1,0 +1,107 @@
+#!/opt/bin/python3
+from __future__ import annotations
+
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-UTIL
+# File      : avp-clean-junk
+# Role      : Cleanup untracked junk files (safe scan/apply)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+
+SCRIPT_VER="v2.0.0"
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Iterable, List, Tuple
+
+def ts() -> str:
+    import datetime as dt
+    return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def log(msg: str) -> None:
+    print(f"{ts()} [CLEAN] {msg}")
+
+def run(cmd: List[str], cwd: Path) -> Tuple[int, str]:
+    p = subprocess.run(cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    return p.returncode, (p.stdout or "")
+
+def is_tracked(repo: Path, rel: str) -> bool:
+    rc, _ = run(["git", "ls-files", "--error-unmatch", rel], cwd=repo)
+    return rc == 0
+
+def iter_candidates(root: Path) -> Iterable[Path]:
+    pat = re.compile(r"""(\.new$|\.patch$|\.rej$|\.orig$|\.bak$|\.tmp$|~$)|(^nohup\.out$)|(\.swp$|\.swo$|\.swx$)""", re.VERBOSE)
+    skip_dirs = {".git", "backups", "logs", "state", "cache"}
+    for dirpath, dirnames, filenames in os.walk(root):
+        d = Path(dirpath)
+        dirnames[:] = [x for x in dirnames if x not in skip_dirs]
+        for fn in filenames:
+            if pat.search(fn):
+                yield (d / fn)
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(prog="avp-clean-junk")
+    ap.add_argument("--root", default="/jffs/scripts", help="repo root (default /jffs/scripts)")
+    ap.add_argument("--scan", action="store_true", help="only list candidates (default)")
+    ap.add_argument("--apply", action="store_true", help="delete candidates (untracked only)")
+    ap.add_argument("-y", "--yes", action="store_true", help="required for --apply (safety)")
+    ns = ap.parse_args(argv)
+
+    repo = Path(ns.root).resolve()
+    if not repo.exists():
+        log(f"ERR: root nao existe: {repo}")
+        return 2
+
+    if not ns.scan and not ns.apply:
+        ns.scan = True
+
+    cands = sorted(set(iter_candidates(repo)))
+    if not cands:
+        log("OK: nenhum candidato encontrado.")
+        return 0
+
+    victims: List[Path] = []
+    for p in cands:
+        try:
+            rel = str(p.relative_to(repo))
+        except Exception:
+            continue
+        if is_tracked(repo, rel):
+            continue
+        victims.append(p)
+
+    if not victims:
+        log("OK: candidatos existem, mas todos sao tracked (nada a fazer).")
+        return 0
+
+    for p in victims:
+        log(f"CANDIDATE: {p}")
+
+    if not ns.apply:
+        log(f"SCAN: {len(victims)} untracked candidates.")
+        return 0
+
+    if not ns.yes:
+        log("ERR: use --yes com --apply (safety).")
+        return 2
+
+    deleted = 0
+    for p in victims:
+        try:
+            p.unlink()
+            deleted += 1
+            log(f"DEL: {p}")
+        except Exception as ex:
+            log(f"WARN: falha ao remover {p}: {ex}")
+
+    log(f"APPLY: deleted={deleted} (untracked only).")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

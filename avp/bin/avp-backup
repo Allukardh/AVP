@@ -1,0 +1,66 @@
+#!/opt/bin/python3
+from __future__ import annotations
+
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-UTIL
+# File      : avp-backup
+# Role      : Version-aware backup utility (idempotente por versao)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+
+SCRIPT_VER="v2.0.0"
+
+import re
+import shutil
+from pathlib import Path
+from typing import List
+
+BACKUP_DIR = Path("/jffs/scripts/backups")
+
+def get_version_token(file: Path) -> str:
+    try:
+        for ln in file.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if re.match(r"^\s*#\s*(Version|VERSION)\s*:", ln):
+                m = re.search(r"(v[0-9][0-9.]*)", ln)
+                return m.group(1) if m else "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+def backup_file(src: Path) -> None:
+    if not src.exists():
+        return
+    ver = get_version_token(src)
+    base = src.name
+    dst = BACKUP_DIR / f"{base}.{ver}.bak"
+    if dst.exists():
+        print(f"SKIP: {base} ({ver}) ja existe")
+        return
+    try:
+        shutil.copy2(src, dst)
+        print(f"OK: {base} -> {dst}")
+    except Exception:
+        print(f"ERR: falha ao copiar {base}")
+
+def main() -> int:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    targets: List[Path] = [
+        Path("/jffs/scripts/services-start"),
+        Path("/jffs/scripts/post-mount"),
+        Path("/jffs/scripts/service-event"),
+        # mantem os legados por enquanto
+        Path("/jffs/scripts/avp/bin/avp-eng.sh"),
+        Path("/jffs/scripts/avp/bin/avp-pol.sh"),
+        Path("/jffs/scripts/avp/bin/avp-diag.sh"),
+        Path("/jffs/scripts/avp/bin/avp-backup.sh"),
+        # e inclui o core novo
+        Path("/jffs/scripts/avp/bin/avp-backup"),
+    ]
+    for t in targets:
+        backup_file(t)
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

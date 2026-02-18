@@ -1,0 +1,107 @@
+#!/opt/bin/python3
+from __future__ import annotations
+
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-UTIL
+# File      : dhcp-lease-refresh
+# Role      : Force DHCP clients to renew (dnsmasq restart + optional deauth)
+# Version   : v1.1.1 (2026-02-18)
+# Status    : stable
+# =============================================================
+
+SCRIPT_VER="v1.1.1"
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Tuple
+
+LEASES = Path("/var/lib/misc/dnsmasq.leases")
+
+def log(msg: str = "") -> None:
+    print(msg)
+
+def run(cmd: List[str]) -> Tuple[int, str]:
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    out = p.stdout or ""
+    return p.returncode, out
+
+def wc_lines(p: Path) -> None:
+    if not p.exists():
+        log("0 " + str(p))
+        return
+    try:
+        n = sum(1 for _ in p.open("r", errors="ignore"))
+        log(f"{n} {p}")
+    except Exception:
+        log(f"? {p}")
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(prog="dhcp-lease-refresh")
+    ap.add_argument("--deauth-all", action="store_true", help="deauth all Wi-Fi clients on wl0/wl1/wl2")
+    ns = ap.parse_args(argv)
+
+    if not LEASES.exists():
+        log(f"ERR: leases file not found: {LEASES}")
+        return 1
+
+    log("=== DHCP Lease Refresh (dnsmasq) ===")
+    log(f"SCRIPT_VER={SCRIPT_VER}")
+    log(f"LEASES={LEASES}")
+    log(f"DEAUTH_ALL={1 if ns.deauth_all else 0}")
+    log()
+    log("=== BEFORE: lease count ===")
+    wc_lines(LEASES)
+    log()
+
+    try:
+        LEASES.write_text("", encoding="utf-8")
+    except Exception as ex:
+        log(f"ERR: failed to clear leases: {LEASES} ({ex})")
+        return 1
+    log("OK: leases cleared")
+    log()
+
+    log("=== Restarting dnsmasq ===")
+    rc, out = run(["service", "restart_dnsmasq"])
+    if out.strip():
+        log(out.rstrip())
+    if rc != 0:
+        log("ERR: service restart_dnsmasq failed")
+        return 1
+    log("OK: dnsmasq restarted")
+    log()
+
+    if ns.deauth_all:
+        log("=== Deauth all Wi-Fi clients (wl0/wl1/wl2) ===")
+        for wlx in ("wl0_ifname", "wl1_ifname", "wl2_ifname"):
+            rc, out = run(["nvram", "get", wlx])
+            ifn = (out.strip().splitlines()[-1] if out.strip() else "").strip()
+            if not ifn:
+                continue
+            rc2, out2 = run(["wl", "-i", ifn, "assoclist"])
+            for ln in (out2 or "").splitlines():
+                parts = ln.split()
+                if len(parts) >= 2:
+                    mac = parts[1].strip()
+                    if mac:
+                        run(["wl", "-i", ifn, "deauth", mac])
+        log("OK: deauth issued (clients should reconnect and renew DHCP)")
+        log()
+
+    log("=== AFTER: lease count ===")
+    wc_lines(LEASES)
+    log()
+    log("=== Current leases (may fill as clients renew) ===")
+    try:
+        log(LEASES.read_text(encoding="utf-8", errors="ignore").rstrip())
+    except Exception:
+        pass
+    log()
+    log("DONE.")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
