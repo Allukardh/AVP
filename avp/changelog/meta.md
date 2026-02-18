@@ -1,5 +1,13 @@
 # AVP-META
 
+## v1.1.0 (2026-02-18)
+- CHG: noop test
+- ADD: --register --targets ... --msg ... (msg obrigatório, sem auto-msg)
+- ADD: --register --staged ... --msg ... (ouro na migração em lote)
+- CHG: remove fallback A2.1 (sem inferência de componente sem header)
+- ADD: AVP_JSON=1 => stdout JSON limpo; logs no stderr
+
+
 ## v1.0.3 (2026-02-18)
 - FIX: avp/changelog/*.md não é alvo governado (meta ignora e não exige header/SCRIPT_VER).
 - ADD: A2.1 fallback no normalize (cria header quando faltar, se existir SCRIPT_VER).

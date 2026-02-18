@@ -1,20 +1,23 @@
 #!/opt/bin/python3
+from __future__ import annotations
+
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-META
 # File      : avp-meta
-# Role      : Metadata governor (V2-only: header + SCRIPT_VER + external changelog)
-# Version   : v1.0.3 (2026-02-18)
+# Role      : Metadata governor (V2-only: header + SCRIPT_VER + external changelog) + register helper
+# Version   : v1.1.0 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.3"
+SCRIPT_VER="v1.1.0"
 
 import argparse
 import datetime as _dt
 import json
 import os
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +28,8 @@ RC_FAIL = 1
 RC_NEEDS_NORMALIZE = 2
 
 SELF = Path(__file__).resolve()
-AVP_ROOT = SELF.parents[1]   # .../avp
-REPO_ROOT = SELF.parents[2]  # .../jffs/scripts
+AVP_ROOT = SELF.parents[1]      # .../avp
+REPO_ROOT = SELF.parents[2]     # .../jffs/scripts
 CHANGELOG_DIR = AVP_ROOT / "changelog"
 LOG_DIR = AVP_ROOT / "logs"
 LOG_FILE = LOG_DIR / "avp_meta.log"
@@ -34,22 +37,31 @@ LOG_FILE = LOG_DIR / "avp_meta.log"
 _VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-HDR_KV_RE = {
+HDR_KV_RE: Dict[str, re.Pattern] = {
     "component": re.compile(r"^\s*#\s*Component\s*:\s*(.+?)\s*$", re.M),
-    "file": re.compile(r"^\s*#\s*File\s*:\s*(.+?)\s*$", re.M),
-    "role": re.compile(r"^\s*#\s*Role\s*:\s*(.+?)\s*$", re.M),
-    "status": re.compile(r"^\s*#\s*Status\s*:\s*(.+?)\s*$", re.M),
-    "version": re.compile(r"^\s*#\s*Version\s*:\s*(v\d+\.\d+\.\d+)\s*\((\d{4}-\d{2}-\d{2})\)\s*$", re.M),
+    "file":      re.compile(r"^\s*#\s*File\s*:\s*(.+?)\s*$", re.M),
+    "role":      re.compile(r"^\s*#\s*Role\s*:\s*(.+?)\s*$", re.M),
+    "status":    re.compile(r"^\s*#\s*Status\s*:\s*(.+?)\s*$", re.M),
+    "version":   re.compile(r"^\s*#\s*Version\s*:\s*(v\d+\.\d+\.\d+)\s*\((\d{4}-\d{2}-\d{2})\)\s*$", re.M),
 }
-
 SCRIPT_VER_RE = re.compile(r'^\s*SCRIPT_VER\s*=\s*"?\s*(v\d+\.\d+\.\d+)\s*"?\s*$', re.M)
 
 def _ts() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def want_json() -> bool:
+    v = (os.environ.get("AVP_JSON") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+def _log_line(msg: str) -> str:
+    return f"{_ts()} [META] {msg}"
+
 def log(msg: str) -> None:
-    line = f"{_ts()} [META] {msg}"
-    print(line)
+    line = _log_line(msg)
+    if want_json():
+        sys.stderr.write(line + "\n")
+    else:
+        print(line)
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         with LOG_FILE.open("a", encoding="utf-8") as f:
@@ -58,11 +70,15 @@ def log(msg: str) -> None:
         pass
 
 def err(msg: str) -> None:
-    print(f"{_ts()} [META] ERR: {msg}", file=sys.stderr)
+    sys.stderr.write(_log_line("ERR: " + msg) + "\n")
 
 def die(msg: str, rc: int = RC_FAIL) -> int:
     err(msg)
     return rc
+
+def jdump(obj: dict) -> None:
+    # stdout limpo: só JSON
+    sys.stdout.write(json.dumps(obj, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 def validate_version(v: str) -> None:
     if not _VERSION_RE.match(v):
@@ -118,7 +134,6 @@ def parse_header(text: str) -> Optional[HeaderInfo]:
 
     if not component or not file_ or not status:
         return None
-
     return HeaderInfo(component, file_, role or "n/a", status, version, date, script_ver)
 
 def component_to_changelog(component: str) -> Path:
@@ -144,7 +159,11 @@ def changelog_has_entry(component: str, version: str, date: Optional[str] = None
     txt = p.read_text(encoding="utf-8", errors="replace")
     if date:
         return f"## {version} ({date})" in txt
-    return re.search(rf"^##\s+{re.escape(version)}\s+\(\d{{4}}-\d{{2}}-\d{{2}}\)\s*$", txt, re.M) is not None
+    return re.search(
+        rf"^##\s+{re.escape(version)}\s+\(\d{{4}}-\d{{2}}-\d{{2}}\)\s*$",
+        txt,
+        re.M
+    ) is not None
 
 def upsert_changelog_entry(component: str, version: str, date: str, bullets: List[str]) -> None:
     validate_version(version)
@@ -181,6 +200,7 @@ def upsert_changelog_entry(component: str, version: str, date: str, bullets: Lis
             break
 
     if sec is None:
+        # insert right after title block
         insert_at = 1
         if len(lines) == 1:
             lines.append("")
@@ -193,7 +213,10 @@ def upsert_changelog_entry(component: str, version: str, date: str, bullets: Lis
         end = sec + 1
         while end < len(lines) and not lines[end].startswith("## "):
             end += 1
-        existing = set(ln.strip() for ln in lines[sec+1:end] if ln.strip().startswith("- "))
+        existing = set(
+            ln.strip() for ln in lines[sec+1:end]
+            if ln.strip().startswith("- ")
+        )
         add = [b for b in norm if b.strip() not in existing]
         if add:
             lines[sec+1:sec+1] = add
@@ -217,6 +240,7 @@ def split_body(text: str, lang: str) -> Tuple[str, str]:
         if lines[j].lstrip().startswith("SCRIPT_VER"):
             sv_line = j
             break
+
     if sv_line is None:
         return (shebang, "".join(lines[i:]))
 
@@ -227,7 +251,7 @@ def split_body(text: str, lang: str) -> Tuple[str, str]:
         return (shebang, "".join(lines[k:]))
 
     setu = None
-    for j in range(sv_line + 1, min(len(lines), sv_line + 120)):
+    for j in range(sv_line + 1, min(len(lines), sv_line + 160)):
         if lines[j].strip() == "set -u":
             setu = j
             break
@@ -308,24 +332,45 @@ def load_spec(spec_path: Path) -> List[SpecItem]:
         out.append(si)
     return out
 
-def infer_component(path: Path, fallback_component: str) -> str:
-    # A2.1 fallback (safe): inferir somente quando for óbvio.
-    # - avp/bin/avp-commit -> AVP-COMMIT
-    # - avp/bin/avp-smoke  -> AVP-SMOKE
-    # - avp/bin/avp        -> AVP-ENTRY
-    n = path.name
-    if path.parent.name == "bin" and path.parent.parent.name == "avp":
-        if n == "avp":
-            return "AVP-ENTRY"
-        if n.startswith("avp-") and len(n) > 4:
-            return "AVP-" + n[4:].upper()
-    return fallback_component
+def run_git(args: List[str]) -> Tuple[int, str]:
+    try:
+        r = subprocess.run(
+            ["/opt/bin/git"] + args if Path("/opt/bin/git").exists() else ["git"] + args,
+            cwd=str(REPO_ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+        return r.returncode, (r.stdout or "")
+    except Exception as ex:
+        return 126, f"git exception: {ex}"
+
+def governed_relpaths(paths: List[str]) -> List[str]:
+    out: List[str] = []
+    for rel in paths:
+        rel = rel.strip().lstrip("/")
+        if not rel:
+            continue
+        # core python tools
+        if rel.startswith("avp/bin/"):
+            out.append(rel); continue
+        # shared python libs
+        if rel.startswith("avp/lib/") and rel.endswith(".py"):
+            out.append(rel); continue
+        # merlin hooks
+        if rel in ("services-start", "post-mount", "service-event"):
+            out.append(rel); continue
+        # webui
+        if rel.startswith("avp/www/") and rel.endswith(".asp"):
+            out.append(rel); continue
+    return sorted(set(out))
 
 def check_one(path: Path) -> int:
     if not path.exists():
         return die(f"{path}: arquivo não existe.", RC_FAIL)
 
-    # changelog externo (md) NÃO é alvo governado
+    # changelog externo (.md) NÃO é alvo governado
     if is_changelog_md(path):
         return RC_OK
 
@@ -337,9 +382,11 @@ def check_one(path: Path) -> int:
     if h.version != h.script_ver:
         return die(f"{path}: mismatch Version(header)={h.version} vs SCRIPT_VER={h.script_ver}", RC_NEEDS_NORMALIZE)
 
-    # changelog externo obrigatório p/ scripts (não para o próprio ./avp/changelog/*.md)
     if not changelog_has_entry(h.component, h.version):
-        return die(f"{path}: changelog externo ausente p/ {h.component} {h.version} em {component_to_changelog(h.component)}", RC_FAIL)
+        return die(
+            f"{path}: changelog externo ausente p/ {h.component} {h.version} em {component_to_changelog(h.component)}",
+            RC_FAIL
+        )
 
     lang = detect_lang(text, path)
     if lang == "shell":
@@ -352,168 +399,194 @@ def check_one(path: Path) -> int:
 
     return RC_OK
 
-def normalize_one(path: Path, fallback_component: str, fallback_role: str, fallback_status: str) -> int:
+def normalize_one(path: Path, explicit: Optional[HeaderInfo]) -> int:
     if is_changelog_md(path):
         return RC_OK
 
     text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
     lang = detect_lang(text, path)
     shebang, body = split_body(text, lang)
-
     h = parse_header(text)
 
-    # A2.1 fallback: se não tem header, tenta criar baseado no SCRIPT_VER e inferência do componente.
-    if not h:
-        msv = SCRIPT_VER_RE.search(text or "")
-        if not msv:
-            return die(f"{path}: sem header e sem SCRIPT_VER; use --apply via spec.", RC_FAIL)
-        ver = msv.group(1).strip()
-        try:
-            validate_version(ver)
-        except Exception:
-            return die(f"{path}: SCRIPT_VER inválido para fallback: {ver}", RC_FAIL)
+    if h is None:
+        if explicit is None:
+            return die(f"{path}: sem header; para normalizar, forneça --component/--file/--role/--version/--date/--status.", RC_NEEDS_NORMALIZE)
+        h = explicit
 
-        today = _dt.datetime.now().strftime("%Y-%m-%d")
-        comp = infer_component(path, fallback_component)
-        h = HeaderInfo(
-            component=comp or fallback_component,
-            file=path.name,
-            role=(fallback_role or "n/a"),
-            status=(fallback_status or "stable"),
-            version=ver,
-            date=today,
-            script_ver=ver,
-        )
-
-    hdr = build_header(lang, h)
-
-    out = ""
+    # (sem fallback A2.1) — usa o header existente (ou explicit) e reescreve o topo
+    data = ""
     if shebang:
-        out += shebang
-    else:
-        out += "#!/opt/bin/python3\n" if lang == "python" else "#!/bin/sh\n"
-    out += hdr
-    out += body.lstrip("\n")
+        data += shebang.rstrip("\n") + "\n"
+    data += build_header(lang, HeaderInfo(
+        component=h.component,
+        file=h.file,
+        role=h.role,
+        status=h.status,
+        version=h.version,
+        date=h.date,
+        script_ver=h.version,
+    ))
+    data += body
 
-    atomic_write(path, out)
+    atomic_write(path, data)
     return RC_OK
 
-def cmd_print_spec_template() -> int:
-    tmpl = {
-        "files": [
-            {
-                "path": "avp/bin/avp-meta",
-                "version": SCRIPT_VER,
-                "date": _dt.datetime.now().strftime("%Y-%m-%d"),
-                "status": "stable",
-                "component": "AVP-META",
-                "role": "Metadata governor (V2-only: header + SCRIPT_VER + external changelog)",
-                "changelog": ["- ADD: example bullet"],
-            }
-        ]
-    }
-    print(json.dumps(tmpl, indent=2))
-    return RC_OK
-
-def cmd_check(targets: List[str]) -> int:
-    rc = RC_OK
-    for t in targets:
-        p = (REPO_ROOT / t).resolve() if not Path(t).is_absolute() else Path(t)
-        r = check_one(p)
-        rc = max(rc, r)
-    return rc
-
-def cmd_normalize(targets: List[str]) -> int:
-    rc = RC_OK
-    for t in targets:
-        p = (REPO_ROOT / t).resolve() if not Path(t).is_absolute() else Path(t)
-        r = normalize_one(p, "AVP-UNK", "n/a", "stable")
-        rc = max(rc, r)
-    return rc
-
-def cmd_apply(spec: Path) -> int:
-    items = load_spec(spec)
+def apply_spec(spec_path: Path) -> int:
+    items = load_spec(spec_path)
     for it in items:
         upsert_changelog_entry(it.component, it.version, it.date, it.changelog)
-
-    for it in items:
-        p = (REPO_ROOT / it.path).resolve() if not Path(it.path).is_absolute() else Path(it.path)
-        if not p.exists():
-            return die(f"{it.path}: arquivo não existe (spec).", RC_FAIL)
-
-        text = p.read_text(encoding="utf-8", errors="replace")
-        lang = detect_lang(text, p)
-        shebang, body = split_body(text, lang)
-
-        h = HeaderInfo(
-            component=it.component,
-            file=p.name,
-            role=it.role or "n/a",
-            status=it.status,
-            version=it.version,
-            date=it.date,
-            script_ver=it.version,
-        )
-
-        hdr = build_header(lang, h)
-        out = (shebang or ("#!/opt/bin/python3\n" if lang == "python" else "#!/bin/sh\n")) + hdr + body.lstrip("\n")
-        atomic_write(p, out)
-
-        if not changelog_has_entry(it.component, it.version, it.date):
-            return die(f"{it.path}: falha ao registrar changelog externo {it.component} {it.version} ({it.date})", RC_FAIL)
-
-    log(f"OK: apply spec={spec}")
     return RC_OK
 
-def build_argp() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="avp-meta", add_help=False)
-    p.add_argument("--help", action="store_true")
-    p.add_argument("--print-spec-template", action="store_true")
-    p.add_argument("--check", action="store_true")
-    p.add_argument("--normalize", action="store_true")
-    p.add_argument("--apply", action="store_true")
-    p.add_argument("--spec", type=str, default="")
-    p.add_argument("--targets", nargs="*", default=[])
-    return p
+def register_files(relpaths: List[str], msgs: List[str]) -> int:
+    if not msgs:
+        return die("register exige ao menos 1 --msg (sem auto-msg).", RC_FAIL)
+
+    changed: List[str] = []
+    for rel in relpaths:
+        p = (REPO_ROOT / rel)
+        if not p.exists():
+            return die(f"alvo não existe: {rel}", RC_FAIL)
+        if is_changelog_md(p):
+            continue
+
+        text = p.read_text(encoding="utf-8", errors="replace")
+        h = parse_header(text)
+        if not h:
+            return die(f"{rel}: header/SCRIPT_VER ausentes (registre só após normalizar).", RC_FAIL)
+
+        if h.version != h.script_ver:
+            return die(f"{rel}: mismatch header {h.version} vs SCRIPT_VER {h.script_ver}", RC_FAIL)
+
+        upsert_changelog_entry(h.component, h.version, h.date, msgs)
+        changed.append(rel)
+
+    if want_json():
+        jdump({
+            "component":"AVP-META",
+            "version":SCRIPT_VER,
+            "action":"register",
+            "rc":0,
+            "targets":changed,
+        })
+    else:
+        log("OK: register " + " ".join(changed) if changed else "OK: register (no targets)")
+    return RC_OK
 
 def main(argv: List[str]) -> int:
-    ns = build_argp().parse_args(argv)
+    ap = argparse.ArgumentParser(prog="avp-meta", add_help=False)
 
-    if ns.help or (not ns.print_spec_template and not ns.check and not ns.normalize and not ns.apply):
+    ap.add_argument("--help", action="store_true")
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--normalize", action="store_true")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--spec", type=str, default="")
+
+    # register helper (A/C)
+    ap.add_argument("--register", action="store_true", help="registrar changelog externo baseado no header do(s) alvo(s)")
+    ap.add_argument("--staged", action="store_true", help="(register) usa arquivos staged (git diff --name-only --cached)")
+    ap.add_argument("--msg", action="append", default=[], help="(register) bullet(s) do changelog (repita --msg)")
+
+    ap.add_argument("--targets", nargs="*", default=[])
+
+    # normalize explicit metadata (somente se alvo não tem header)
+    ap.add_argument("--component", type=str, default="")
+    ap.add_argument("--file", type=str, default="")
+    ap.add_argument("--role", type=str, default="")
+    ap.add_argument("--version", type=str, default="")
+    ap.add_argument("--date", type=str, default="")
+    ap.add_argument("--status", type=str, default="")
+
+    ns = ap.parse_args(argv)
+
+    if ns.help or (not ns.check and not ns.normalize and not ns.apply and not ns.register):
         print(
             "Usage:\n"
-            "  avp-meta --help\n"
-            "  avp-meta --print-spec-template\n\n"
-            "  avp-meta --check --targets [...]\n"
-            "  avp-meta --normalize --targets [...]\n"
-            "  avp-meta --apply --spec /caminho/spec.json\n\n"
-            "Notas:\n"
-            "- V2-only: scripts NÃO possuem bloco CHANGELOG interno.\n"
-            "- CHANGELOG externo por componente em ./avp/changelog/*.md\n"
-            "- avp/changelog/*.md NÃO é alvo governado (meta ignora).\n"
-            "- A2.1 fallback: normalize cria header quando faltar (se houver SCRIPT_VER).\n"
+            "  avp-meta --check --targets <relpaths...>\n"
+            "  avp-meta --normalize --targets <relpaths...> [--component ... --file ... --role ... --version ... --date ... --status ...]\n"
+            "  avp-meta --apply --spec <file.json>\n"
+            "\n"
+            "Register helper (ergonomia):\n"
+            "  avp-meta --register --targets <relpaths...> --msg \"...\" [--msg \"...\"]\n"
+            "  avp-meta --register --staged --msg \"...\" [--msg \"...\"]\n"
+            "\n"
+            "Notes:\n"
+            "- V2: changelog é externo em ./avp/changelog/*.md\n"
+            "- Sem auto-msg: --msg é obrigatório no --register.\n"
+            "- Sem fallback: meta não infere componente se faltar header; normalize exige metadata explícita.\n"
+            "- AVP_JSON=1 => stdout JSON limpo; logs no stderr.\n"
         )
         return RC_OK
 
-    if ns.print_spec_template:
-        return cmd_print_spec_template()
-
-    if ns.check:
-        if not ns.targets:
-            return die("--check requer --targets", RC_FAIL)
-        return cmd_check(ns.targets)
-
-    if ns.normalize:
-        if not ns.targets:
-            return die("--normalize requer --targets", RC_FAIL)
-        return cmd_normalize(ns.targets)
-
     if ns.apply:
         if not ns.spec:
-            return die("--apply requer --spec", RC_FAIL)
-        return cmd_apply(Path(ns.spec))
+            return die("--apply exige --spec <json>", RC_FAIL)
+        rc = apply_spec(Path(ns.spec))
+        if want_json():
+            jdump({"component":"AVP-META","version":SCRIPT_VER,"action":"apply","rc":rc,"spec":ns.spec})
+        else:
+            log(f"OK: apply spec={ns.spec}" if rc == 0 else f"FAIL: apply spec={ns.spec}")
+        return rc
 
-    return die("modo inválido", RC_FAIL)
+    if ns.register:
+        rels: List[str] = []
+        if ns.staged:
+            rc, out = run_git(["diff", "--name-only", "--cached"])
+            if rc != 0:
+                return die("falha ao ler staged (git diff --cached).", RC_FAIL)
+            rels = governed_relpaths([ln.strip() for ln in out.splitlines() if ln.strip()])
+        else:
+            rels = governed_relpaths(ns.targets)
+
+        if not rels:
+            return die("register: nenhum alvo governado encontrado (use --targets ou --staged).", RC_FAIL)
+
+        return register_files(rels, ns.msg)
+
+    # check / normalize
+    rels = governed_relpaths(ns.targets)
+    if not rels:
+        return die("nenhum alvo governado em --targets.", RC_FAIL)
+
+    explicit: Optional[HeaderInfo] = None
+    if ns.normalize:
+        if ns.component or ns.file or ns.role or ns.version or ns.date or ns.status:
+            # exige tudo se for usar explicit
+            if not (ns.component and ns.file and ns.version and ns.date and ns.status):
+                return die("normalize explicit exige: --component --file --version --date --status (role opcional).", RC_FAIL)
+            validate_version(ns.version)
+            validate_date(ns.date)
+            explicit = HeaderInfo(
+                component=ns.component,
+                file=ns.file,
+                role=ns.role or "n/a",
+                status=ns.status,
+                version=ns.version,
+                date=ns.date,
+                script_ver=ns.version,
+            )
+
+    worst = RC_OK
+    for rel in rels:
+        p = (REPO_ROOT / rel)
+        if ns.check:
+            worst = max(worst, check_one(p))
+        if ns.normalize:
+            worst = max(worst, normalize_one(p, explicit))
+
+    if want_json():
+        jdump({
+            "component":"AVP-META",
+            "version":SCRIPT_VER,
+            "action":"check" if ns.check else "normalize",
+            "rc":worst,
+            "targets":rels,
+        })
+    else:
+        if worst == RC_OK:
+            log("OK")
+        else:
+            err("FAIL")
+    return worst
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
