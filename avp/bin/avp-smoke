@@ -3,56 +3,51 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-SMOKE
 # File      : avp-smoke
-# Role      : Smoke gate (V2-only: no internal changelog; delegates metadata checks to avp-meta)
-# Version   : v2.0.1 (2026-02-18)
+# Role      : Smoke gate (V2-only: delegates metadata checks to avp-meta)
+# Version   : v2.1.0 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v2.0.1"
+SCRIPT_VER="v2.1.0"
 
 import argparse
-import datetime as _dt
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
+import avp_common as C
+
 RC_OK = 0
 RC_FAIL = 1
 
-SELF = Path(__file__).resolve()
-AVP_ROOT = SELF.parents[1]
-REPO_ROOT = SELF.parents[2]
+REPO_ROOT, AVP_ROOT, BIN_DIR = C.self_paths(__file__)
 META_BIN = (AVP_ROOT / "bin/avp-meta").resolve()
 
-def ts() -> str:
-    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def _stdout(msg: str) -> None:
+    print(msg)
 
-def info(msg: str) -> None:
-    print(f"{ts()} [SMOKE] {msg}")
+def _log(msg: str) -> None:
+    if not C.want_json():
+        _stdout(msg)
+    else:
+        C.info("SMOKE", msg)
 
-def err(msg: str) -> None:
-    print(f"{ts()} [SMOKE] ERR: {msg}", file=sys.stderr)
+def _err(msg: str) -> None:
+    if not C.want_json():
+        print(msg, file=sys.stderr)
+    else:
+        C.err("SMOKE", msg)
 
-def run(cmd: List[str], *, cwd: Optional[Path] = None, check: bool = False) -> int:
-    try:
-        r = subprocess.run(
-            cmd,
-            cwd=str(cwd) if cwd else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        if r.stdout:
-            for ln in r.stdout.rstrip().splitlines():
-                print(ln)
-        if check and r.returncode != 0:
-            return RC_FAIL
-        return RC_OK if r.returncode == 0 else RC_FAIL
-    except FileNotFoundError:
-        err(f"cmd não encontrado: {cmd[0]}")
-        return RC_FAIL
+def run(cmd: List[str], *, cwd: Optional[Path] = None) -> int:
+    rc, out = C.run(cmd, cwd=cwd, check=False, capture=True)
+    if out.strip():
+        for ln in out.rstrip().splitlines():
+            if not C.want_json():
+                _stdout(ln)
+            else:
+                C.info("SMOKE", ln)
+    return RC_OK if rc == 0 else RC_FAIL
 
 def is_shell_target(p: Path) -> bool:
     name = p.name
@@ -71,21 +66,35 @@ def is_python_target(p: Path) -> bool:
 
 def meta_check_one(rel: str) -> int:
     if not META_BIN.exists() or not os.access(META_BIN, os.X_OK):
-        err("avp-meta não encontrado/executável (obrigatório no V2).")
+        _err("avp-meta não encontrado/executável (obrigatório no V2).")
         return RC_FAIL
-    return run([str(META_BIN), "--check", "--targets", rel], cwd=REPO_ROOT, check=True)
+    return run([str(META_BIN), "--check", "--targets", rel], cwd=REPO_ROOT)
 
 def sh_syntax(rel: str) -> int:
-    return run(["/bin/sh", "-n", str(REPO_ROOT / rel)], cwd=REPO_ROOT, check=True)
+    return run(["/bin/sh", "-n", str(REPO_ROOT / rel)], cwd=REPO_ROOT)
 
 def py_compile(rel: str) -> int:
-    return run(["/opt/bin/python3", "-m", "py_compile", str(REPO_ROOT / rel)], cwd=REPO_ROOT, check=True)
+    return run(["/opt/bin/python3", "-m", "py_compile", str(REPO_ROOT / rel)], cwd=REPO_ROOT)
 
 def git_diff_check() -> int:
     rc = RC_OK
     rc = max(rc, run(["git", "diff", "--check"], cwd=REPO_ROOT))
     rc = max(rc, run(["git", "diff", "--cached", "--check"], cwd=REPO_ROOT))
     return rc
+
+def auto_targets() -> List[str]:
+    changed = C.find_changed_files(REPO_ROOT)
+    if not changed:
+        return []
+    out: List[str] = []
+    for rel in changed:
+        rel = rel.strip().lstrip("/")
+        if not rel:
+            continue
+        p = (REPO_ROOT / rel)
+        if p.exists():
+            out.append(rel)
+    return sorted(set(out))
 
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(prog="avp-smoke", add_help=False)
@@ -96,41 +105,59 @@ def main(argv: List[str]) -> int:
     ns = ap.parse_args(argv)
 
     if ns.help or (not ns.pre and not ns.post):
-        print(
+        _stdout(
             "Usage:\n"
             "  avp-smoke --pre  [targets...]\n"
             "  avp-smoke --post [targets...]\n\n"
             "Notas:\n"
-            "- V2-only: sem changelog interno; governança via avp-meta + changelog externo.\n"
-            "- Faz git diff --check (worktree + staged), sh -n (alvos shell) e py_compile (alvos python).\n"
+            "- Se nenhum target for passado, ele auto-detecta via git (staged -> unstaged).\n"
+            "- AVP_JSON=1 faz saída JSON mínima (logs vão pra stderr).\n"
         )
         return RC_OK
 
     mode = "--pre" if ns.pre else "--post"
-    info(f"AVP-SMOKE {SCRIPT_VER} MODE={mode}")
+    if not C.want_json():
+        _stdout(f"{C.ts()} [SMOKE] AVP-SMOKE {SCRIPT_VER} MODE={mode}")
 
     rc = RC_OK
     rc = max(rc, git_diff_check())
 
-    for t in ns.targets:
+    targets = ns.targets
+    if not targets:
+        targets = auto_targets()
+
+    checked: List[str] = []
+
+    for t in targets:
         rel = t.lstrip("/")
         p = (REPO_ROOT / rel)
         if not p.exists():
-            err(f"alvo não existe: {rel}")
+            _err(f"{C.ts()} [SMOKE] ERR: alvo não existe: {rel}")
             rc = RC_FAIL
             continue
 
-        rc = max(rc, meta_check_one(rel))
+        checked.append(rel)
 
+        rc = max(rc, meta_check_one(rel))
         if is_shell_target(p):
             rc = max(rc, sh_syntax(rel))
         if is_python_target(p):
             rc = max(rc, py_compile(rel))
 
+    if C.want_json():
+        C.jprint({
+            "component": "AVP-SMOKE",
+            "version": SCRIPT_VER,
+            "mode": mode,
+            "rc": 0 if rc == RC_OK else 1,
+            "targets": checked,
+        })
+        return rc
+
     if rc == RC_OK:
-        info("OK")
+        _stdout(f"{C.ts()} [SMOKE] OK")
     else:
-        err("FAIL")
+        _err(f"{C.ts()} [SMOKE] ERR: FAIL")
     return rc
 
 if __name__ == "__main__":

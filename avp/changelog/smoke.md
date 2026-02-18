@@ -1,5 +1,10 @@
 # AVP-SMOKE
 
+## v2.1.0 (2026-02-18)
+- ADD(3): auto-targets (staged -> unstaged) quando nenhum target é passado
+- ADD: AVP_JSON=1 => saída JSON mínima (logs em stderr)
+- CHG: refactor usando avp_common
+
 ## v2.0.1 (2026-02-18)
 - FIX: comandos git/sh/python agora rodam com cwd determinístico (REPO_ROOT)
 - CHG: resolve REPO_ROOT/META_BIN via __file__ (menos frágil)

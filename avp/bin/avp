@@ -4,18 +4,18 @@
 # Component : AVP-ENTRY
 # File      : avp
 # Role      : Entrypoint dispatcher (V2) for AVP tools
-# Version   : v1.0.0 (2026-02-17)
+# Version   : v1.0.1 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.0"
+SCRIPT_VER="v1.0.1"
 
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 SELF = Path(__file__).resolve()
 BIN_DIR = SELF.parent
@@ -31,22 +31,34 @@ SUBS = {
     "apply": "avp-apply",
 }
 
-def _die(msg: str, rc: int = 2) -> int:
+def _die(msg: str, rc: int = 2, *, debug: bool = False, tried: Optional[List[str]] = None) -> int:
     print(f"ERR: {msg}", file=sys.stderr)
+    if debug:
+        print(f"DBG: BIN_DIR={BIN_DIR}", file=sys.stderr)
+        p = os.environ.get("PATH", "")
+        print(f"DBG: PATH={p}", file=sys.stderr)
+        if tried:
+            print("DBG: tried:", file=sys.stderr)
+            for t in tried:
+                print(f"  - {t}", file=sys.stderr)
     return rc
 
-def _find_exe(name: str) -> Optional[str]:
+def _find_exe(name: str) -> (Optional[str], List[str]):
+    tried: List[str] = []
     # prioridade: avp/bin/<tool> (SSOT local)
     p = (BIN_DIR / name)
+    tried.append(str(p))
     if p.exists() and os.access(p, os.X_OK):
-        return str(p)
+        return str(p), tried
 
-    # fallback: PATH (entware/host)
+    # fallback: PATH
     w = shutil.which(name)
-    if w and os.access(w, os.X_OK):
-        return w
+    if w:
+        tried.append(w)
+        if os.access(w, os.X_OK):
+            return w, tried
 
-    return None
+    return None, tried
 
 def _git_short() -> str:
     try:
@@ -68,6 +80,7 @@ def _help() -> None:
         "Usage:\n"
         "  avp --help\n"
         "  avp --version\n"
+        "  avp --json <subcmd> <args...>   (exporta AVP_JSON=1 pro subcmd)\n"
         "\n"
         "Python-first tools:\n"
         "  avp meta   <args...>\n"
@@ -77,7 +90,7 @@ def _help() -> None:
         "  avp apply  <args...>\n"
         "\n"
         "Notes:\n"
-        "- Dispatcher V2: apenas encaminha para os binários em ./avp/bin.\n"
+        "- Dispatcher V2: encaminha para ./avp/bin.\n"
         "- PATH já inclui /jffs/scripts/avp/bin no teu bootstrap.\n"
     )
 
@@ -85,6 +98,13 @@ def main(argv: List[str]) -> int:
     if not argv or argv[0] in ("--help", "-h", "help"):
         _help()
         return 0
+
+    # (2) melhoria: --json global (propaga via env)
+    if argv and argv[0] == "--json":
+        os.environ["AVP_JSON"] = "1"
+        argv = argv[1:]
+        if not argv:
+            return _die("faltou subcomando após --json (use --help)")
 
     if argv[0] in ("--version", "-V", "version"):
         print(f"AVP-ENTRY {SCRIPT_VER} (git={_git_short()})")
@@ -95,9 +115,9 @@ def main(argv: List[str]) -> int:
     if not tool:
         return _die(f"subcomando inválido: {sub} (use --help)")
 
-    exe = _find_exe(tool)
+    exe, tried = _find_exe(tool)
     if not exe:
-        return _die(f"{tool} não encontrado/executável em {BIN_DIR} nem no PATH")
+        return _die(f"{tool} não encontrado/executável", debug=True, tried=tried)
 
     os.execv(exe, [exe] + argv[1:])  # no return
 
