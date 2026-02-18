@@ -97,6 +97,9 @@ def governed_files(staged: List[str]) -> List[str]:
         if f.startswith("avp/bin/"):
             out.append(f)
             continue
+        if f.startswith("avp/lib/"):
+            out.append(f)
+            continue
         if f in GOV_RELS:
             out.append(f)
             continue

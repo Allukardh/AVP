@@ -1,4 +1,6 @@
 #!/opt/bin/python3
+from __future__ import annotations
+
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-SMOKE
@@ -11,105 +13,104 @@
 SCRIPT_VER="v2.1.1"
 
 import argparse
+import datetime as _dt
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-import avp_common as C
+# local shared helpers (kept minimal; no dependency on imports)
+def ts() -> str:
+    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def want_json() -> bool:
+    v = (os.environ.get("AVP_JSON") or "").strip().lower()
+    return v in ("1","true","yes","on")
+
+def info(msg: str) -> None:
+    (sys.stderr if want_json() else sys.stdout).write(f"{ts()} [SMOKE] {msg}\n")
+
+def err(msg: str) -> None:
+    sys.stderr.write(f"{ts()} [SMOKE] ERR: {msg}\n")
 
 RC_OK = 0
 RC_FAIL = 1
 
-REPO_ROOT, AVP_ROOT, BIN_DIR = C.self_paths(__file__)
+SELF = Path(__file__).resolve()
+AVP_ROOT = SELF.parents[1]      # .../avp
+REPO_ROOT = SELF.parents[2]     # .../jffs/scripts
 META_BIN = (AVP_ROOT / "bin/avp-meta").resolve()
 
-def _stdout(msg: str) -> None:
-    print(msg)
+CORE_AUTO = [
+    "avp/bin/avp",
+    "avp/bin/avp-meta",
+    "avp/bin/avp-smoke",
+    "avp/bin/avp-apply",
+    "avp/bin/avp-commit",
+    "avp/bin/avp-tag",
+    "avp/lib/avp_common.py",
+]
 
-def _log_plain(line: str) -> None:
-    _stdout(f"{C.ts()} [SMOKE] {line}")
-
-def _err_plain(line: str) -> None:
-    print(f"{C.ts()} [SMOKE] ERR: {line}", file=sys.stderr)
-
-def _log(line: str) -> None:
-    if C.want_json():
-        C.info("SMOKE", line)
-    else:
-        _log_plain(line)
-
-def _err(line: str) -> None:
-    if C.want_json():
-        C.err("SMOKE", line)
-    else:
-        _err_plain(line)
-
-def run(cmd: List[str], *, cwd: Optional[Path] = None) -> int:
-    rc, out = C.run(cmd, cwd=cwd, check=False, capture=True)
-    if out.strip():
-        for ln in out.rstrip().splitlines():
-            if C.want_json():
-                C.info("SMOKE", ln)
-            else:
-                _stdout(ln)
-    return RC_OK if rc == 0 else RC_FAIL
+def run(cmd: List[str], *, cwd: Optional[Path] = None, check: bool = False) -> Tuple[int,str]:
+    try:
+        r = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        out = (r.stdout or "")
+        if out and not want_json():
+            for ln in out.rstrip().splitlines():
+                print(ln)
+        elif out and want_json():
+            # não poluir stdout quando em modo JSON
+            sys.stderr.write(out if out.endswith("\n") else out + "\n")
+        if check and r.returncode != 0:
+            return RC_FAIL, out
+        return (RC_OK if r.returncode == 0 else RC_FAIL), out
+    except FileNotFoundError:
+        return RC_FAIL, f"cmd não encontrado: {cmd[0]}"
 
 def is_shell_target(p: Path) -> bool:
-    n = p.name
-    if n in ("services-start", "post-mount", "service-event"):
+    name = p.name
+    if name in ("services-start", "post-mount", "service-event"):
         return True
-    if n.endswith(".sh"):
+    if name.endswith(".sh"):
         return True
-    if n.startswith(("services-", "service-")):
+    if name.startswith(("services-", "service-")):
         return True
     return False
 
 def is_python_target(p: Path) -> bool:
+    # avp/bin executáveis python (sem .sh) e avp/lib/*.py
     if p.parent.name == "bin" and p.parent.parent.name == "avp":
         return not p.name.endswith(".sh")
-    return False
-
-def should_skip_rel(rel: str) -> bool:
-    rel = rel.strip().lstrip("/")
-    # IMPORTANT: changelog externo é arquivo de apoio; não é “alvo governado” do smoke.
-    if rel.startswith("avp/changelog/") and rel.endswith(".md"):
+    if p.parent.name == "lib" and p.parent.parent.name == "avp" and p.name.endswith(".py"):
         return True
     return False
 
 def meta_check_one(rel: str) -> int:
-    if should_skip_rel(rel):
-        return RC_OK
     if not META_BIN.exists() or not os.access(META_BIN, os.X_OK):
-        _err("avp-meta não encontrado/executável (obrigatório no V2).")
+        err("avp-meta não encontrado/executável (obrigatório no V2).")
         return RC_FAIL
-    return run([str(META_BIN), "--check", "--targets", rel], cwd=REPO_ROOT)
-
-def sh_syntax(rel: str) -> int:
-    return run(["/bin/sh", "-n", str(REPO_ROOT / rel)], cwd=REPO_ROOT)
-
-def py_compile(rel: str) -> int:
-    return run(["/opt/bin/python3", "-m", "py_compile", str(REPO_ROOT / rel)], cwd=REPO_ROOT)
-
-def git_diff_check() -> int:
-    rc = RC_OK
-    rc = max(rc, run(["git", "diff", "--check"], cwd=REPO_ROOT))
-    rc = max(rc, run(["git", "diff", "--cached", "--check"], cwd=REPO_ROOT))
+    rc, _ = run([str(META_BIN), "--check", "--targets", rel], cwd=REPO_ROOT, check=True)
     return rc
 
-def auto_targets_post() -> List[str]:
-    changed = C.find_changed_files(REPO_ROOT)
-    if not changed:
-        return []
-    out: List[str] = []
-    for rel in changed:
-        rel = rel.strip().lstrip("/")
-        if not rel or should_skip_rel(rel):
-            continue
-        p = (REPO_ROOT / rel)
-        if p.exists():
-            out.append(rel)
-    return sorted(set(out))
+def sh_syntax(rel: str) -> int:
+    rc, _ = run(["/bin/sh", "-n", str(REPO_ROOT / rel)], cwd=REPO_ROOT, check=True)
+    return rc
+
+def py_compile(rel: str) -> int:
+    rc, _ = run(["/opt/bin/python3", "-m", "py_compile", str(REPO_ROOT / rel)], cwd=REPO_ROOT, check=True)
+    return rc
+
+def git_diff_check() -> int:
+    rc1, _ = run(["git", "diff", "--check"], cwd=REPO_ROOT)
+    rc2, _ = run(["git", "diff", "--cached", "--check"], cwd=REPO_ROOT)
+    return max(rc1, rc2)
 
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(prog="avp-smoke", add_help=False)
@@ -120,44 +121,34 @@ def main(argv: List[str]) -> int:
     ns = ap.parse_args(argv)
 
     if ns.help or (not ns.pre and not ns.post):
-        _stdout(
+        print(
             "Usage:\n"
             "  avp-smoke --pre  [targets...]\n"
             "  avp-smoke --post [targets...]\n\n"
             "Notas:\n"
-            "- --pre sem targets = só git diff --check (worktree + staged).\n"
-            "- --post sem targets = auto-detect via git (staged -> unstaged), exclui avp/changelog/*.md.\n"
-            "- AVP_JSON=1 faz saída JSON mínima (logs em stderr).\n"
+            "- V2-only: governança via avp-meta.\n"
+            "- Faz git diff --check (worktree + staged), sh -n (shell) e py_compile (python).\n"
+            "- Sem fiscalização de changelog/docs em .md.\n"
         )
         return RC_OK
 
     mode = "--pre" if ns.pre else "--post"
-    if not C.want_json():
-        _log_plain(f"AVP-SMOKE {SCRIPT_VER} MODE={mode}")
+    info(f"AVP-SMOKE {SCRIPT_VER} MODE={mode}")
 
     rc = RC_OK
     rc = max(rc, git_diff_check())
 
-    # targets explícitos sempre ganham.
-    targets: List[str] = list(ns.targets or [])
-
-    # auto-target SOMENTE no --post
-    if not targets and ns.post:
-        targets = auto_targets_post()
-
+    targets = ns.targets[:] if ns.targets else CORE_AUTO
     checked: List[str] = []
     for t in targets:
-        rel = t.strip().lstrip("/")
-        if not rel or should_skip_rel(rel):
-            continue
+        rel = t.lstrip("/")
         p = (REPO_ROOT / rel)
         if not p.exists():
-            _err(f"alvo não existe: {rel}")
+            err(f"alvo não existe: {rel}")
             rc = RC_FAIL
             continue
 
         checked.append(rel)
-
         rc = max(rc, meta_check_one(rel))
 
         if is_shell_target(p):
@@ -165,20 +156,23 @@ def main(argv: List[str]) -> int:
         if is_python_target(p):
             rc = max(rc, py_compile(rel))
 
-    if C.want_json():
-        C.jprint({
-            "component": "AVP-SMOKE",
-            "version": SCRIPT_VER,
-            "mode": mode,
-            "rc": 0 if rc == RC_OK else 1,
-            "targets": checked,
-        })
+    if want_json():
+        # stdout limpo: só JSON
+        out = {
+            "component":"AVP-SMOKE",
+            "version":SCRIPT_VER,
+            "mode":mode,
+            "rc":rc,
+            "targets":checked,
+        }
+        import json
+        print(json.dumps(out, ensure_ascii=False, separators=(",",":")))
         return rc
 
     if rc == RC_OK:
-        _log_plain("OK")
+        info("OK")
     else:
-        _err_plain("FAIL")
+        err("FAIL")
     return rc
 
 if __name__ == "__main__":
