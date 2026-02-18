@@ -102,3 +102,8 @@ avp/*
 
 # but ignore runtime json even inside tracked www
 avp/www/*.json
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
