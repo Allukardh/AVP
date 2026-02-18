@@ -4,11 +4,11 @@
 # Component : AVP-SMOKE
 # File      : avp-smoke
 # Role      : Smoke gate (V2-only: delegates metadata checks to avp-meta)
-# Version   : v2.1.0 (2026-02-18)
+# Version   : v2.1.1 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v2.1.0"
+SCRIPT_VER="v2.1.1"
 
 import argparse
 import os
@@ -27,35 +27,41 @@ META_BIN = (AVP_ROOT / "bin/avp-meta").resolve()
 def _stdout(msg: str) -> None:
     print(msg)
 
-def _log(msg: str) -> None:
-    if not C.want_json():
-        _stdout(msg)
-    else:
-        C.info("SMOKE", msg)
+def _log_plain(line: str) -> None:
+    _stdout(f"{C.ts()} [SMOKE] {line}")
 
-def _err(msg: str) -> None:
-    if not C.want_json():
-        print(msg, file=sys.stderr)
+def _err_plain(line: str) -> None:
+    print(f"{C.ts()} [SMOKE] ERR: {line}", file=sys.stderr)
+
+def _log(line: str) -> None:
+    if C.want_json():
+        C.info("SMOKE", line)
     else:
-        C.err("SMOKE", msg)
+        _log_plain(line)
+
+def _err(line: str) -> None:
+    if C.want_json():
+        C.err("SMOKE", line)
+    else:
+        _err_plain(line)
 
 def run(cmd: List[str], *, cwd: Optional[Path] = None) -> int:
     rc, out = C.run(cmd, cwd=cwd, check=False, capture=True)
     if out.strip():
         for ln in out.rstrip().splitlines():
-            if not C.want_json():
-                _stdout(ln)
-            else:
+            if C.want_json():
                 C.info("SMOKE", ln)
+            else:
+                _stdout(ln)
     return RC_OK if rc == 0 else RC_FAIL
 
 def is_shell_target(p: Path) -> bool:
-    name = p.name
-    if name in ("services-start", "post-mount", "service-event"):
+    n = p.name
+    if n in ("services-start", "post-mount", "service-event"):
         return True
-    if name.endswith(".sh"):
+    if n.endswith(".sh"):
         return True
-    if name.startswith(("services-", "service-")):
+    if n.startswith(("services-", "service-")):
         return True
     return False
 
@@ -64,7 +70,16 @@ def is_python_target(p: Path) -> bool:
         return not p.name.endswith(".sh")
     return False
 
+def should_skip_rel(rel: str) -> bool:
+    rel = rel.strip().lstrip("/")
+    # IMPORTANT: changelog externo é arquivo de apoio; não é “alvo governado” do smoke.
+    if rel.startswith("avp/changelog/") and rel.endswith(".md"):
+        return True
+    return False
+
 def meta_check_one(rel: str) -> int:
+    if should_skip_rel(rel):
+        return RC_OK
     if not META_BIN.exists() or not os.access(META_BIN, os.X_OK):
         _err("avp-meta não encontrado/executável (obrigatório no V2).")
         return RC_FAIL
@@ -82,14 +97,14 @@ def git_diff_check() -> int:
     rc = max(rc, run(["git", "diff", "--cached", "--check"], cwd=REPO_ROOT))
     return rc
 
-def auto_targets() -> List[str]:
+def auto_targets_post() -> List[str]:
     changed = C.find_changed_files(REPO_ROOT)
     if not changed:
         return []
     out: List[str] = []
     for rel in changed:
         rel = rel.strip().lstrip("/")
-        if not rel:
+        if not rel or should_skip_rel(rel):
             continue
         p = (REPO_ROOT / rel)
         if p.exists():
@@ -110,35 +125,41 @@ def main(argv: List[str]) -> int:
             "  avp-smoke --pre  [targets...]\n"
             "  avp-smoke --post [targets...]\n\n"
             "Notas:\n"
-            "- Se nenhum target for passado, ele auto-detecta via git (staged -> unstaged).\n"
-            "- AVP_JSON=1 faz saída JSON mínima (logs vão pra stderr).\n"
+            "- --pre sem targets = só git diff --check (worktree + staged).\n"
+            "- --post sem targets = auto-detect via git (staged -> unstaged), exclui avp/changelog/*.md.\n"
+            "- AVP_JSON=1 faz saída JSON mínima (logs em stderr).\n"
         )
         return RC_OK
 
     mode = "--pre" if ns.pre else "--post"
     if not C.want_json():
-        _stdout(f"{C.ts()} [SMOKE] AVP-SMOKE {SCRIPT_VER} MODE={mode}")
+        _log_plain(f"AVP-SMOKE {SCRIPT_VER} MODE={mode}")
 
     rc = RC_OK
     rc = max(rc, git_diff_check())
 
-    targets = ns.targets
-    if not targets:
-        targets = auto_targets()
+    # targets explícitos sempre ganham.
+    targets: List[str] = list(ns.targets or [])
+
+    # auto-target SOMENTE no --post
+    if not targets and ns.post:
+        targets = auto_targets_post()
 
     checked: List[str] = []
-
     for t in targets:
-        rel = t.lstrip("/")
+        rel = t.strip().lstrip("/")
+        if not rel or should_skip_rel(rel):
+            continue
         p = (REPO_ROOT / rel)
         if not p.exists():
-            _err(f"{C.ts()} [SMOKE] ERR: alvo não existe: {rel}")
+            _err(f"alvo não existe: {rel}")
             rc = RC_FAIL
             continue
 
         checked.append(rel)
 
         rc = max(rc, meta_check_one(rel))
+
         if is_shell_target(p):
             rc = max(rc, sh_syntax(rel))
         if is_python_target(p):
@@ -155,9 +176,9 @@ def main(argv: List[str]) -> int:
         return rc
 
     if rc == RC_OK:
-        _stdout(f"{C.ts()} [SMOKE] OK")
+        _log_plain("OK")
     else:
-        _err(f"{C.ts()} [SMOKE] ERR: FAIL")
+        _err_plain("FAIL")
     return rc
 
 if __name__ == "__main__":

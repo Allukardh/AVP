@@ -1,5 +1,10 @@
 # AVP-META
 
+## v1.0.3 (2026-02-18)
+- FIX: avp/changelog/*.md não é alvo governado (meta ignora e não exige header/SCRIPT_VER).
+- ADD: A2.1 fallback no normalize (cria header quando faltar, se existir SCRIPT_VER).
+- POLISH: inferência segura de Component para avp/bin (AVP-ENTRY e AVP-<TOOL>).
+
 ## v1.0.2 (2026-02-17)
 - FIX: atomic_write escreve tmp no mesmo filesystem do destino (evita EXDEV cross-device link em /tmp -> /jffs)
 

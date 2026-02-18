@@ -1,5 +1,10 @@
 # AVP-SMOKE
 
+## v2.1.1 (2026-02-18)
+- CHG: --pre sem targets roda somente git diff --check (sem auto-target).
+- CHG: auto-target via git fica restrito ao --post.
+- FIX: exclui avp/changelog/*.md do auto-target e ignora esses alvos no smoke.
+
 ## v2.1.0 (2026-02-18)
 - ADD(3): auto-targets (staged -> unstaged) quando nenhum target é passado
 - ADD: AVP_JSON=1 => saída JSON mínima (logs em stderr)
