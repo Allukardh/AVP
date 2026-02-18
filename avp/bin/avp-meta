@@ -6,11 +6,11 @@ from __future__ import annotations
 # Component : AVP-META
 # File      : avp-meta
 # Role      : Metadata governor (V2-only: header + SCRIPT_VER + external changelog)
-# Version   : v1.0.1 (2026-02-17)
+# Version   : v1.0.2 (2026-02-17)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.1"
+SCRIPT_VER="v1.0.2"
 
 import argparse
 import datetime as _dt
@@ -278,10 +278,12 @@ def build_header(lang: str, h: HeaderInfo) -> str:
     )
 
 def atomic_write(path: Path, data: str) -> None:
-    tmp = Path("/tmp") / (path.name + ".meta.tmp")
+    # IMPORTANT (Merlin): /tmp pode ser outro filesystem; rename cross-device (EXDEV) quebra atomicidade.
+    # Escreva o tmp no MESMO diretório do destino e use os.replace().
+    tmp = path.with_name(path.name + ".meta.tmp")
     tmp.write_text(data, encoding="utf-8")
     os.chmod(tmp, path.stat().st_mode if path.exists() else 0o755)
-    tmp.replace(path)
+    os.replace(str(tmp), str(path))
 
 @dataclass
 class SpecItem:
@@ -366,7 +368,7 @@ def cmd_print_spec_template() -> int:
         "files": [
             {
                 "path": "avp/bin/avp-meta",
-                "version": "v1.0.1",
+                "version": "v1.0.2",
                 "date": _dt.datetime.now().strftime("%Y-%m-%d"),
                 "status": "stable",
                 "component": "AVP-META",

@@ -1,5 +1,9 @@
 # AVP-META
 
+## v1.0.2 (2026-02-17)
+- FIX: atomic_write escreve tmp no mesmo filesystem do destino (evita EXDEV cross-device link em /tmp -> /jffs)
+
+
 ## v1.0.1 (2026-02-17)
 - FIX: autodetect do header do alvo (Component/Version/Status/Role) no --check/--normalize (V2)
 - FIX: valida changelog externo do componente correto (não hardcode AVP-META)
