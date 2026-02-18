@@ -1,27 +1,28 @@
 #!/opt/bin/python3
-from __future__ import annotations
-
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-TAG
 # File      : avp-tag
 # Role      : Tagger/publisher (V2-only: external changelog; guardrails for ck/* and rel/*)
-# Version   : v2.0.0 (2026-02-17)
+# Version   : v2.0.1 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v2.0.0"
+SCRIPT_VER="v2.0.1"
 
 import argparse
 import datetime as _dt
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
-REPO = Path("/jffs/scripts")
-META = Path("/jffs/scripts/avp/bin/avp-meta")
+SELF = Path(__file__).resolve()
+AVP_ROOT = SELF.parents[1]
+REPO = SELF.parents[2]
+META = (AVP_ROOT / "bin/avp-meta").resolve()
 
 RC_OK = 0
 RC_FAIL = 1
@@ -57,7 +58,6 @@ def require_clean_tree() -> None:
         raise SystemExit("ERROR: working tree sujo. Faça commit antes de tag.")
 
 def require_up_to_date_origin_main() -> None:
-    # best-effort: se não existir origin/main, não bloqueia
     head = git_out(["rev-parse", "HEAD"])
     rc = git_rc(["rev-parse", "--verify", "origin/main"])
     if rc != 0:
@@ -68,17 +68,15 @@ def require_up_to_date_origin_main() -> None:
         raise SystemExit("ERROR: HEAD != origin/main. Faça push do main antes de tag.")
 
 def meta_check_file(rel: str) -> None:
-    if not META.exists() or not META.is_file():
+    if not META.exists() or not os.access(META, os.X_OK):
         raise SystemExit("ERROR: avp-meta não encontrado/executável (obrigatório no V2).")
     rc = subprocess.run([str(META), "--check", "--targets", rel], cwd=str(REPO), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if rc.returncode != 0:
         raise SystemExit(f"ERROR: META gate falhou em {rel}")
 
 def create_tag(tag: str, msg: str, ref: str, dry_run: bool) -> None:
-    # existe?
-    if git_rc(["show-ref","--verify","--quiet", f"refs/tags/{tag}"]) == 0:
+    if git_rc(["show-ref", "--verify", "--quiet", f"refs/tags/{tag}"]) == 0:
         raise SystemExit(f"ERROR: tag já existe: {tag}")
-
     cmd = ["git", "tag", "-a", tag, "-m", msg, ref]
     info(" ".join(cmd))
     if not dry_run:
@@ -97,7 +95,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--publish", action="store_true", help="faz push do tag em origin após criar")
 
     ap.add_argument("kind", nargs="?", default="", help="ck|rel")
-    ap.add_argument("name", nargs="?", default="", help="ex: py_smoke_v2_20260217 (para ck) ou v2.0.0 (para rel)")
+    ap.add_argument("name", nargs="?", default="", help="ex: py_smoke_v2_20260218 (ck) ou v2.0.1 (rel)")
     ap.add_argument("message", nargs="?", default="", help="mensagem do tag")
     ap.add_argument("ref", nargs="?", default="HEAD", help="ref alvo (default HEAD)")
 
@@ -129,7 +127,6 @@ def main(argv: List[str]) -> int:
     require_clean_tree()
     require_up_to_date_origin_main()
 
-    # META gate no próprio avp-tag (garante header/SCRIPT_VER/changelog externo)
     meta_check_file("avp/bin/avp-tag")
 
     create_tag(tag, ns.message, ns.ref, ns.dry_run)

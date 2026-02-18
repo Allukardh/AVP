@@ -1,5 +1,10 @@
 # AVP-APPLY
 
+## v2.0.1 (2026-02-18)
+- FIX: lista AFFECTED antes do apply (após apply o patch pode não bater)
+- CHG: argparse --3way usa dest=threeway (remove hack ns.__dict__)
+- POLISH: log append sem read-whole-file
+
 ## v1.0.26 (2026-02-15)
 -   * CHANGE: baseline policy alinhada com avp-tag.sh (status --porcelain)
 ## v1.0.25 (2026-02-14)

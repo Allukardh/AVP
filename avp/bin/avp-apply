@@ -1,16 +1,14 @@
 #!/opt/bin/python3
-from __future__ import annotations
-
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-APPLY
 # File      : avp-apply
 # Role      : Patch apply helper (V2-only: external changelog; meta checks best-effort)
-# Version   : v2.0.0 (2026-02-17)
+# Version   : v2.0.1 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v2.0.0"
+SCRIPT_VER="v2.0.1"
 
 import argparse
 import datetime as _dt
@@ -20,33 +18,25 @@ import sys
 from pathlib import Path
 from typing import List
 
-
 SELF = Path(__file__).resolve()
-AVP_ROOT = SELF.parents[1]      # .../avp
-REPO_ROOT = SELF.parents[2]     # .../jffs/scripts
+AVP_ROOT = SELF.parents[1]
+REPO_ROOT = SELF.parents[2]
 LOG_DIR = AVP_ROOT / "logs"
 LOG_FILE = LOG_DIR / "avp_apply.log"
-META_BIN = REPO_ROOT / "avp/bin/avp-meta"
-
+META_BIN = (AVP_ROOT / "bin/avp-meta").resolve()
 
 def ts() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 
 def log(msg: str) -> None:
     line = f"{ts()} [APPLY] {msg}"
     print(line)
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
-        LOG_FILE.write_text(LOG_FILE.read_text(encoding="utf-8", errors="ignore") + line + "\n", encoding="utf-8")
+        with LOG_FILE.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
     except Exception:
-        try:
-            LOG_DIR.mkdir(parents=True, exist_ok=True)
-            with LOG_FILE.open("a", encoding="utf-8") as f:
-                f.write(line + "\n")
-        except Exception:
-            pass
-
+        pass
 
 def run(cmd: List[str], check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
     log("RUN: " + " ".join(cmd))
@@ -59,16 +49,13 @@ def run(cmd: List[str], check: bool = True, capture: bool = False) -> subprocess
         stderr=subprocess.STDOUT if capture else None,
     )
 
-
 def git(cmd: List[str], check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
     return run(["git"] + cmd, check=check, capture=capture)
 
-
-def list_patch_files(patch: Path) -> List[str]:
-    # tenta obter lista de arquivos afetados por "git apply --numstat"
+def list_patch_files_pre(patch: Path) -> List[str]:
     try:
         out = git(["apply", "--numstat", str(patch)], check=True, capture=True).stdout or ""
-        files = []
+        files: List[str] = []
         for ln in out.splitlines():
             parts = ln.split("\t")
             if len(parts) >= 3:
@@ -76,7 +63,6 @@ def list_patch_files(patch: Path) -> List[str]:
         return sorted(set(f for f in files if f))
     except Exception:
         return []
-
 
 def meta_check(files: List[str]) -> None:
     if not META_BIN.exists() or not os.access(META_BIN, os.X_OK):
@@ -86,7 +72,6 @@ def meta_check(files: List[str]) -> None:
         p = REPO_ROOT / f
         if not p.exists():
             continue
-        # best-effort: só roda e loga; não mata apply por causa disso
         try:
             subprocess.run(
                 [str(META_BIN), "--check", "--targets", f],
@@ -99,15 +84,13 @@ def meta_check(files: List[str]) -> None:
         except Exception:
             pass
 
-
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(prog="avp-apply")
     ap.add_argument("patches", nargs="+", help="arquivo(s) .patch para aplicar")
-    ap.add_argument("--3way", action="store_true", help="tenta git apply --3way")
+    ap.add_argument("--3way", dest="threeway", action="store_true", help="tenta git apply --3way")
     ap.add_argument("--check-only", action="store_true", help="somente valida (git apply --check), sem aplicar")
     ns = ap.parse_args(argv)
 
-    # sanity: repo
     git(["rev-parse", "--is-inside-work-tree"], check=True)
 
     for p in ns.patches:
@@ -118,32 +101,29 @@ def main(argv: List[str]) -> int:
             log(f"ERR: patch não existe: {patch}")
             return 2
 
-        # 1) check
         log(f"CHECK: {patch}")
         git(["apply", "--check", str(patch)], check=True)
 
+        files = list_patch_files_pre(patch)
+        if files:
+            log("AFFECTED: " + " ".join(files))
+
         if ns.check_only:
+            meta_check(files)
             log(f"OK(check-only): {patch}")
             continue
 
-        # 2) apply
         cmd = ["apply"]
-        if ns.__dict__.get("3way"):
+        if ns.threeway:
             cmd += ["--3way"]
         cmd += [str(patch)]
         log(f"APPLY: {patch}")
         git(cmd, check=True)
 
-        # 3) meta checks best-effort nos arquivos afetados
-        files = list_patch_files(patch)
-        if files:
-            log("AFFECTED: " + " ".join(files))
         meta_check(files)
-
         log(f"OK: applied {patch}")
 
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

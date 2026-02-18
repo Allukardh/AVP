@@ -1,16 +1,14 @@
 #!/opt/bin/python3
-from __future__ import annotations
-
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-COMMIT
 # File      : avp-commit
 # Role      : Git commit gate (V2-only: delegates governance to avp-meta; external changelog)
-# Version   : v2.0.0 (2026-02-17)
+# Version   : v2.0.1 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v2.0.0"
+SCRIPT_VER="v2.0.1"
 
 import argparse
 import datetime as _dt
@@ -22,11 +20,11 @@ from typing import List, Optional, Tuple
 
 RC_OK = 0
 RC_FAIL = 1
-RC_GATE = 2
 
 SELF = Path(__file__).resolve()
 AVP_ROOT = SELF.parents[1]      # .../avp
 REPO_ROOT = SELF.parents[2]     # .../jffs/scripts
+BIN_DIR = SELF.parent           # .../avp/bin
 LOG_DIR = AVP_ROOT / "logs"
 LOG_FILE = LOG_DIR / "avp_gitops.log"
 
@@ -35,6 +33,7 @@ GOV_RELS = (
     "post-mount",
     "service-event",
 )
+
 def _ts() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -55,8 +54,7 @@ def find_bin(name: str, hints: List[str]) -> Optional[str]:
     for p in hints:
         if p and os.path.isfile(p) and os.access(p, os.X_OK):
             return p
-    path = os.environ.get("PATH", "/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin")
-    for d in path.split(":"):
+    for d in os.environ.get("PATH", "").split(":"):
         d = d.strip()
         if not d:
             continue
@@ -64,6 +62,9 @@ def find_bin(name: str, hints: List[str]) -> Optional[str]:
         if os.path.isfile(cand) and os.access(cand, os.X_OK):
             return cand
     return None
+
+GIT_BIN = find_bin("git", ["/opt/bin/git", "/usr/bin/git", "/bin/git"])
+META_BIN = str((BIN_DIR / "avp-meta").resolve())
 
 def run(cmd: List[str], cwd: Optional[Path] = None, check: bool = True) -> Tuple[int, str]:
     p = subprocess.run(
@@ -86,7 +87,8 @@ def git_lines(args: List[str]) -> List[str]:
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
 
 def meta_check(relpath: str) -> None:
-    # V2 SSOT gate: header/SCRIPT_VER + external changelog (via avp-meta)
+    if not os.path.isfile(META_BIN) or not os.access(META_BIN, os.X_OK):
+        raise SystemExit("ERROR: avp-meta não encontrado/executável (obrigatório no V2).")
     run([META_BIN, "--check", "--targets", relpath], cwd=REPO_ROOT, check=True)
 
 def governed_files(staged: List[str]) -> List[str]:
@@ -98,13 +100,16 @@ def governed_files(staged: List[str]) -> List[str]:
         if f in GOV_RELS:
             out.append(f)
             continue
-        # webui (se você quiser governar também):
         if f.startswith("avp/www/") and f.endswith(".asp"):
             out.append(f)
             continue
     return out
 
 def main(argv: List[str]) -> int:
+    if not GIT_BIN:
+        err("git não encontrado no PATH (instale via Entware ou ajuste PATH no bootstrap).")
+        return RC_FAIL
+
     ap = argparse.ArgumentParser(prog="avp-commit", add_help=False)
     ap.add_argument("--help", action="store_true")
     ap.add_argument("--allow-multi", action="store_true", help="compat flag (no-op in python)")
@@ -122,13 +127,15 @@ def main(argv: List[str]) -> int:
             "Notes (V2):\n"
             "- Governança (header/SCRIPT_VER/changelog externo) é SSOT via avp-meta --check.\n"
             "- Changelog é externo em ./avp/changelog/*.md (este script não lê changelog interno).\n"
+            "- Prova final: git show --stat --name-status HEAD.\n"
         )
         return RC_OK if ns.help else RC_FAIL
+
+    run([GIT_BIN, "rev-parse", "--is-inside-work-tree"], cwd=REPO_ROOT, check=True)
 
     if ns.add_all:
         run([GIT_BIN, "add", "-A"], cwd=REPO_ROOT, check=True)
 
-    # bloqueia working tree suja (não staged), salvo --allow-dirty
     if not ns.allow_dirty:
         unstaged = git_lines(["diff", "--name-only"])
         if unstaged:
@@ -137,12 +144,14 @@ def main(argv: List[str]) -> int:
                 print(x)
             return RC_FAIL
 
+    run([GIT_BIN, "diff", "--check"], cwd=REPO_ROOT, check=True)
+    run([GIT_BIN, "diff", "--cached", "--check"], cwd=REPO_ROOT, check=True)
+
     staged = git_lines(["diff", "--name-only", "--cached"])
     if not staged:
         err("nada staged para commitar.")
         return RC_FAIL
 
-    # META gate nos arquivos governados
     gov = governed_files(staged)
     if gov:
         for f in gov:
@@ -150,14 +159,11 @@ def main(argv: List[str]) -> int:
     else:
         log("WARN: nenhum arquivo governado detectado no staged (ok).")
 
-    # commit
     run([GIT_BIN, "commit", "-m", ns.message], cwd=REPO_ROOT, check=True)
 
-    # push (por padrão sim; só desliga com --no-push)
     if not ns.no_push:
         run([GIT_BIN, "push", "origin", "main"], cwd=REPO_ROOT, check=True)
 
-    # prova final
     run([GIT_BIN, "--no-pager", "show", "--stat", "--name-status", "HEAD"], cwd=REPO_ROOT, check=True)
     return RC_OK
 

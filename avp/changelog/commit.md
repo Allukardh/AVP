@@ -1,5 +1,10 @@
 # AVP-COMMIT
 
+## v2.0.1 (2026-02-18)
+- FIX: define GIT_BIN e META_BIN (NameError fatal) + sanity repo
+- ADD: git diff --check (worktree + staged) antes do commit
+- CHG: meta gate exige avp-meta executável e usa cwd determinístico
+
 ## v1.0.0 (2026-02-14)
 - ADD: versao inicial
 

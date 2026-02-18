@@ -1,16 +1,14 @@
 #!/opt/bin/python3
-from __future__ import annotations
-
 # =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-SMOKE
 # File      : avp-smoke
 # Role      : Smoke gate (V2-only: no internal changelog; delegates metadata checks to avp-meta)
-# Version   : v2.0.0 (2026-02-17)
+# Version   : v2.0.1 (2026-02-18)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v2.0.0"
+SCRIPT_VER="v2.0.1"
 
 import argparse
 import datetime as _dt
@@ -18,13 +16,15 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 RC_OK = 0
 RC_FAIL = 1
 
-REPO_ROOT = Path("/jffs/scripts")
-META_BIN = Path("/jffs/scripts/avp/bin/avp-meta")
+SELF = Path(__file__).resolve()
+AVP_ROOT = SELF.parents[1]
+REPO_ROOT = SELF.parents[2]
+META_BIN = (AVP_ROOT / "bin/avp-meta").resolve()
 
 def ts() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -35,9 +35,15 @@ def info(msg: str) -> None:
 def err(msg: str) -> None:
     print(f"{ts()} [SMOKE] ERR: {msg}", file=sys.stderr)
 
-def run(cmd: List[str], check: bool = False) -> int:
+def run(cmd: List[str], *, cwd: Optional[Path] = None, check: bool = False) -> int:
     try:
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        r = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
         if r.stdout:
             for ln in r.stdout.rstrip().splitlines():
                 print(ln)
@@ -54,15 +60,12 @@ def is_shell_target(p: Path) -> bool:
         return True
     if name.endswith(".sh"):
         return True
-    # hooks do Merlin sem extensão geralmente são shell
     if name.startswith(("services-", "service-")):
         return True
     return False
 
 def is_python_target(p: Path) -> bool:
-    # AVP V2: avp/bin/* sem extensão tende a ser python
     if p.parent.name == "bin" and p.parent.parent.name == "avp":
-        # exceto wrappers .sh (que vamos eliminar na migração)
         return not p.name.endswith(".sh")
     return False
 
@@ -70,20 +73,18 @@ def meta_check_one(rel: str) -> int:
     if not META_BIN.exists() or not os.access(META_BIN, os.X_OK):
         err("avp-meta não encontrado/executável (obrigatório no V2).")
         return RC_FAIL
-    return run([str(META_BIN), "--check", "--targets", rel], check=True)
+    return run([str(META_BIN), "--check", "--targets", rel], cwd=REPO_ROOT, check=True)
 
 def sh_syntax(rel: str) -> int:
-    # BusyBox sh -n
-    return run(["/bin/sh", "-n", str(REPO_ROOT / rel)], check=True)
+    return run(["/bin/sh", "-n", str(REPO_ROOT / rel)], cwd=REPO_ROOT, check=True)
 
 def py_compile(rel: str) -> int:
-    return run(["/opt/bin/python3", "-m", "py_compile", str(REPO_ROOT / rel)], check=True)
+    return run(["/opt/bin/python3", "-m", "py_compile", str(REPO_ROOT / rel)], cwd=REPO_ROOT, check=True)
 
 def git_diff_check() -> int:
-    # checks rápidos (sem “prova gigante”)
     rc = RC_OK
-    rc = max(rc, run(["git", "diff", "--check"]))
-    rc = max(rc, run(["git", "diff", "--cached", "--check"]))
+    rc = max(rc, run(["git", "diff", "--check"], cwd=REPO_ROOT))
+    rc = max(rc, run(["git", "diff", "--cached", "--check"], cwd=REPO_ROOT))
     return rc
 
 def main(argv: List[str]) -> int:
@@ -111,7 +112,6 @@ def main(argv: List[str]) -> int:
     rc = RC_OK
     rc = max(rc, git_diff_check())
 
-    # se não passar targets, smoke “global” (só diff-check)
     for t in ns.targets:
         rel = t.lstrip("/")
         p = (REPO_ROOT / rel)
@@ -120,10 +120,8 @@ def main(argv: List[str]) -> int:
             rc = RC_FAIL
             continue
 
-        # 1) governança V2 via meta (header/SCRIPT_VER/changelog externo)
         rc = max(rc, meta_check_one(rel))
 
-        # 2) sintaxe por tipo
         if is_shell_target(p):
             rc = max(rc, sh_syntax(rel))
         if is_python_target(p):

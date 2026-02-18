@@ -1,5 +1,9 @@
 # AVP-TAG
 
+## v2.0.1 (2026-02-18)
+- CHG: resolve REPO/META via __file__ (remove hardcode /jffs/scripts)
+- FIX: meta gate exige avp-meta executável
+
 ## v1.0.6 (2026-02-15)
 - CHG: rel/* publica por padrão (SSOT) — use --no-publish para desligar
 - ADDED: --help/-h + mensagem explícita quando publish estiver desligado

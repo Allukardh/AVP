@@ -1,5 +1,9 @@
 # AVP-SMOKE
 
+## v2.0.1 (2026-02-18)
+- FIX: comandos git/sh/python agora rodam com cwd determinístico (REPO_ROOT)
+- CHG: resolve REPO_ROOT/META_BIN via __file__ (menos frágil)
+
 ## v1.4.15 (2026-02-14)
 - FIX: normalize changelog (add missing entries, preserve full history)
 ## v1.4.14 (2026-02-14)
