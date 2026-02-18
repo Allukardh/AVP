@@ -76,8 +76,7 @@ def meta_check_file(rel: str) -> None:
 
 def create_tag(tag: str, msg: str, ref: str, dry_run: bool) -> None:
     # existe?
-    rc = git_rc(["rev-parse", "--verify", tag])
-    if rc == 0:
+    if git_rc(["show-ref","--verify","--quiet", f"refs/tags/{tag}"]) == 0:
         raise SystemExit(f"ERROR: tag já existe: {tag}")
 
     cmd = ["git", "tag", "-a", tag, "-m", msg, ref]
