@@ -1,4 +1,4 @@
-# AVP-GITOPS
+# AVP-COMMIT
 
 ## v1.0.0 (2026-02-14)
 - ADD: versao inicial

@@ -1,0 +1,165 @@
+#!/opt/bin/python3
+from __future__ import annotations
+
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-COMMIT
+# File      : avp-commit
+# Role      : Git commit gate (V2-only: delegates governance to avp-meta; external changelog)
+# Version   : v2.0.0 (2026-02-17)
+# Status    : stable
+# =============================================================
+
+SCRIPT_VER="v2.0.0"
+
+import argparse
+import datetime as _dt
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+RC_OK = 0
+RC_FAIL = 1
+RC_GATE = 2
+
+SELF = Path(__file__).resolve()
+AVP_ROOT = SELF.parents[1]      # .../avp
+REPO_ROOT = SELF.parents[2]     # .../jffs/scripts
+LOG_DIR = AVP_ROOT / "logs"
+LOG_FILE = LOG_DIR / "avp_gitops.log"
+
+GOV_RELS = (
+    "services-start",
+    "post-mount",
+    "service-event",
+)
+def _ts() -> str:
+    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def log(msg: str) -> None:
+    line = f"{_ts()} [GITOPS] {msg}"
+    print(line)
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with LOG_FILE.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+
+def err(msg: str) -> None:
+    print(f"{_ts()} [GITOPS] ERR: {msg}", file=sys.stderr)
+
+def find_bin(name: str, hints: List[str]) -> Optional[str]:
+    for p in hints:
+        if p and os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    path = os.environ.get("PATH", "/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin")
+    for d in path.split(":"):
+        d = d.strip()
+        if not d:
+            continue
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+def run(cmd: List[str], cwd: Optional[Path] = None, check: bool = True) -> Tuple[int, str]:
+    p = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    out = p.stdout or ""
+    if check and p.returncode != 0:
+        err(f"cmd failed ({p.returncode}): {' '.join(cmd)}")
+        if out.strip():
+            print(out.rstrip())
+        raise SystemExit(RC_FAIL)
+    return p.returncode, out
+
+def git_lines(args: List[str]) -> List[str]:
+    _, out = run([GIT_BIN] + args, cwd=REPO_ROOT, check=True)
+    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
+def meta_check(relpath: str) -> None:
+    # V2 SSOT gate: header/SCRIPT_VER + external changelog (via avp-meta)
+    run([META_BIN, "--check", "--targets", relpath], cwd=REPO_ROOT, check=True)
+
+def governed_files(staged: List[str]) -> List[str]:
+    out: List[str] = []
+    for f in staged:
+        if f.startswith("avp/bin/"):
+            out.append(f)
+            continue
+        if f in GOV_RELS:
+            out.append(f)
+            continue
+        # webui (se você quiser governar também):
+        if f.startswith("avp/www/") and f.endswith(".asp"):
+            out.append(f)
+            continue
+    return out
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(prog="avp-commit", add_help=False)
+    ap.add_argument("--help", action="store_true")
+    ap.add_argument("--allow-multi", action="store_true", help="compat flag (no-op in python)")
+    ap.add_argument("--add-all", action="store_true", help="run git add -A before commit")
+    ap.add_argument("--no-push", action="store_true", help="do not push after commit (use only for offline/debug)")
+    ap.add_argument("--allow-dirty", action="store_true", help="allow unstaged working tree changes")
+    ap.add_argument("-m", "--message", type=str, default="")
+    ns = ap.parse_args(argv)
+
+    if ns.help or not ns.message:
+        print(
+            "Usage:\n"
+            "  avp-commit -m \"<msg>\" [--add-all] [--no-push] [--allow-dirty]\n"
+            "\n"
+            "Notes (V2):\n"
+            "- Governança (header/SCRIPT_VER/changelog externo) é SSOT via avp-meta --check.\n"
+            "- Changelog é externo em ./avp/changelog/*.md (este script não lê changelog interno).\n"
+        )
+        return RC_OK if ns.help else RC_FAIL
+
+    if ns.add_all:
+        run([GIT_BIN, "add", "-A"], cwd=REPO_ROOT, check=True)
+
+    # bloqueia working tree suja (não staged), salvo --allow-dirty
+    if not ns.allow_dirty:
+        unstaged = git_lines(["diff", "--name-only"])
+        if unstaged:
+            err("working tree tem mudanças não staged. Use --allow-dirty ou faça git add -A.")
+            for x in unstaged[:50]:
+                print(x)
+            return RC_FAIL
+
+    staged = git_lines(["diff", "--name-only", "--cached"])
+    if not staged:
+        err("nada staged para commitar.")
+        return RC_FAIL
+
+    # META gate nos arquivos governados
+    gov = governed_files(staged)
+    if gov:
+        for f in gov:
+            meta_check(f)
+    else:
+        log("WARN: nenhum arquivo governado detectado no staged (ok).")
+
+    # commit
+    run([GIT_BIN, "commit", "-m", ns.message], cwd=REPO_ROOT, check=True)
+
+    # push (por padrão sim; só desliga com --no-push)
+    if not ns.no_push:
+        run([GIT_BIN, "push", "origin", "main"], cwd=REPO_ROOT, check=True)
+
+    # prova final
+    run([GIT_BIN, "--no-pager", "show", "--stat", "--name-status", "HEAD"], cwd=REPO_ROOT, check=True)
+    return RC_OK
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

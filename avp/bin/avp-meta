@@ -120,8 +120,14 @@ def component_to_changelog(component: str) -> Path:
     slug = c[4:].lower() if c.startswith("AVP-") else c.lower()
 
     # macro-domínios
-    if slug in ("commit", "tag", "apply", "git", "gitops"):
+    if slug in ("git", "gitops"):
         slug = "gitops"
+    if slug == "commit":
+        slug = "commit"
+    if slug == "tag":
+        slug = "tag"
+    if slug == "apply":
+        slug = "apply"
     if slug in ("boot", "hook", "hooks"):
         slug = "hooks"
     return CHANGELOG_DIR / f"{slug}.md"
