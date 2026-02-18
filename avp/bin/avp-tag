@@ -1,0 +1,144 @@
+#!/opt/bin/python3
+from __future__ import annotations
+
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-TAG
+# File      : avp-tag
+# Role      : Tagger/publisher (V2-only: external changelog; guardrails for ck/* and rel/*)
+# Version   : v2.0.0 (2026-02-17)
+# Status    : stable
+# =============================================================
+
+SCRIPT_VER="v2.0.0"
+
+import argparse
+import datetime as _dt
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Optional
+
+REPO = Path("/jffs/scripts")
+META = Path("/jffs/scripts/avp/bin/avp-meta")
+
+RC_OK = 0
+RC_FAIL = 1
+
+REL_RE = re.compile(r"^rel/v\d+\.\d+\.\d+$")
+CK_RE  = re.compile(r"^ck/[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+def ts() -> str:
+    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def info(msg: str) -> None:
+    print(f"{ts()} [TAG] {msg}")
+
+def err(msg: str) -> None:
+    print(f"{ts()} [TAG] ERR: {msg}", file=sys.stderr)
+
+def run(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=str(REPO), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=check)
+
+def git_out(args: List[str]) -> str:
+    r = run(["git"] + args, check=True)
+    return (r.stdout or "").strip()
+
+def git_rc(args: List[str]) -> int:
+    r = subprocess.run(["git"] + args, cwd=str(REPO), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if r.stdout:
+        print(r.stdout.rstrip())
+    return r.returncode
+
+def require_clean_tree() -> None:
+    st = git_out(["status", "--porcelain"])
+    if st.strip():
+        raise SystemExit("ERROR: working tree sujo. Faça commit antes de tag.")
+
+def require_up_to_date_origin_main() -> None:
+    # best-effort: se não existir origin/main, não bloqueia
+    head = git_out(["rev-parse", "HEAD"])
+    rc = git_rc(["rev-parse", "--verify", "origin/main"])
+    if rc != 0:
+        info("WARN: origin/main não encontrado (skip up-to-date check).")
+        return
+    origin = git_out(["rev-parse", "origin/main"])
+    if head != origin:
+        raise SystemExit("ERROR: HEAD != origin/main. Faça push do main antes de tag.")
+
+def meta_check_file(rel: str) -> None:
+    if not META.exists() or not META.is_file():
+        raise SystemExit("ERROR: avp-meta não encontrado/executável (obrigatório no V2).")
+    rc = subprocess.run([str(META), "--check", "--targets", rel], cwd=str(REPO), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if rc.returncode != 0:
+        raise SystemExit(f"ERROR: META gate falhou em {rel}")
+
+def create_tag(tag: str, msg: str, ref: str, dry_run: bool) -> None:
+    # existe?
+    rc = git_rc(["rev-parse", "--verify", tag])
+    if rc == 0:
+        raise SystemExit(f"ERROR: tag já existe: {tag}")
+
+    cmd = ["git", "tag", "-a", tag, "-m", msg, ref]
+    info(" ".join(cmd))
+    if not dry_run:
+        run(cmd, check=True)
+
+def push_tag(tag: str, dry_run: bool) -> None:
+    cmd = ["git", "push", "origin", tag]
+    info(" ".join(cmd))
+    if not dry_run:
+        run(cmd, check=True)
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(prog="avp-tag", add_help=False)
+    ap.add_argument("--help", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="não cria/push, só mostra comandos")
+    ap.add_argument("--publish", action="store_true", help="faz push do tag em origin após criar")
+
+    ap.add_argument("kind", nargs="?", default="", help="ck|rel")
+    ap.add_argument("name", nargs="?", default="", help="ex: py_smoke_v2_20260217 (para ck) ou v2.0.0 (para rel)")
+    ap.add_argument("message", nargs="?", default="", help="mensagem do tag")
+    ap.add_argument("ref", nargs="?", default="HEAD", help="ref alvo (default HEAD)")
+
+    ns = ap.parse_args(argv)
+
+    if ns.help or not ns.kind or not ns.name or not ns.message:
+        print(
+            "Usage:\n"
+            "  avp-tag --publish ck <slug> \"Mensagem\" [ref]\n"
+            "  avp-tag --publish rel <vX.Y.Z> \"Mensagem\" [ref]\n"
+            "  avp-tag --dry-run ...\n\n"
+            "Notas:\n"
+            "- V2-only: sem changelog interno; histórico em avp/changelog/tag.md\n"
+            "- Exige working tree limpo e HEAD == origin/main (best-effort).\n"
+        )
+        return RC_OK
+
+    if ns.kind not in ("ck", "rel"):
+        err("kind inválido: use ck ou rel")
+        return RC_FAIL
+
+    tag = f"{ns.kind}/{ns.name}" if not ns.name.startswith(f"{ns.kind}/") else ns.name
+
+    if ns.kind == "rel" and not REL_RE.match(tag):
+        raise SystemExit("ERROR: rel deve ser rel/vX.Y.Z")
+    if ns.kind == "ck" and not CK_RE.match(tag):
+        raise SystemExit("ERROR: ck deve ser ck/<slug> (A-Za-z0-9._-)")
+
+    require_clean_tree()
+    require_up_to_date_origin_main()
+
+    # META gate no próprio avp-tag (garante header/SCRIPT_VER/changelog externo)
+    meta_check_file("avp/bin/avp-tag")
+
+    create_tag(tag, ns.message, ns.ref, ns.dry_run)
+    if ns.publish:
+        push_tag(tag, ns.dry_run)
+
+    info("OK")
+    return RC_OK
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
