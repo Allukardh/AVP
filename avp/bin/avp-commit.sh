@@ -94,14 +94,15 @@ if [ "$COUNT_SH" -gt 1 ] && [ "$ALLOW_MULTI" -ne 1 ]; then
 fi
 
 # ---- GOVERNANCA ROBUSTA ----
-for f in $SH_FILES; do
-  HEADER_VER="$(grep -E '^# Version' "$f" | head -n1 | awk '{for(i=1;i<=NF;i++) if($i ~ /^v[0-9]/){print $i; exit}}')"
-  SCRIPT_VER_LINE="$(grep -E '^SCRIPT_VER=' "$f" | head -n1 | cut -d'"' -f2)"
-  CHANGELOG_MATCH="$(awk "/^# CHANGELOG/{flag=1;next}/^# =============================================================/{flag=0}flag" "$f" | grep -E "$HEADER_VER" || true)"
+# V2: governança de header/SCRIPT_VER/changelog é 100% SSOT via avp-meta --check
+META_BIN="/jffs/scripts/avp/bin/avp-meta"
+[ -x "$META_BIN" ] || META_BIN="/jffs/scripts/avp/bin/avp-meta.sh"
+[ -x "$META_BIN" ] || { echo "ERROR: avp-meta (V2) nao encontrado/executavel"; exit 2; }
 
-  [ -n "$HEADER_VER" ] || { echo "ERROR: Version ausente em $f"; exit 2; }
-  [ "$HEADER_VER" = "$SCRIPT_VER_LINE" ] || { echo "ERROR: SCRIPT_VER mismatch em $f"; exit 2; }
-  [ -n "$CHANGELOG_MATCH" ] || { echo "ERROR: CHANGELOG nao contem $HEADER_VER em $f"; exit 2; }
+GOV_FILES="$(echo "$CHANGED" | grep -E '^(avp/bin/|services-start$|post-mount$|service-event$)' || true)"
+for f in $GOV_FILES; do
+  [ -f "$f" ] || continue
+  "$META_BIN" --check --targets "$f" >/dev/null 2>&1 || { echo "ERROR: META gate falhou em $f"; exit 2; }
 done
 
 # ---- REMOCOES ----
