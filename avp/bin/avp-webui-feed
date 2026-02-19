@@ -1,0 +1,313 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-WEBUI Feed
+# File      : avp-webui-feed
+# Role      : WebUI JSON status feed (exporter)
+# Version   : v2.0.0 (2026-02-19)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import time
+import json
+import subprocess
+import signal
+import atexit
+from pathlib import Path
+
+CLI = "/jffs/scripts/avp-cli.sh"
+OUT = "/jffs/scripts/avp/www/avp-status.json"
+PID_FILE = "/tmp/avp_webui_feed.pid"
+LOCK_DIR = "/tmp/avp_webui_feed.lock"
+
+# logs (preferência: jffs; fallback: tmp)
+LOGDIR = os.environ.get("AVP_LOGDIR", "/tmp/avp_logs")
+os.makedirs(LOGDIR, exist_ok=True)
+LOGW = os.path.join(LOGDIR, "avp_webui_warn.log")
+LOGS = os.path.join(LOGDIR, "avp_webui_feed_state.log")
+
+BASE_SLEEP = 5
+MAX_BACKOFF = 60
+ROTATE_MAX = 65536  # 64 KiB
+
+def ts() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+def rotate_if_big(fp: str) -> None:
+    try:
+        if os.path.exists(fp) and os.path.getsize(fp) >= ROTATE_MAX:
+            os.replace(fp, fp + ".1")
+    except Exception:
+        pass
+
+def log_warn(msg: str) -> None:
+    rotate_if_big(LOGW)
+    with open(LOGW, "a") as f:
+        f.write(f"{ts()} [WARN] {msg}\\n")
+
+def log_state(msg: str) -> None:
+    rotate_if_big(LOGS)
+    with open(LOGS, "a") as f:
+        f.write(f"{ts()} [FEED] {msg}\\n")
+
+def json_err(code: str, level: str = "ERR", hint: str = "", where: str = "FEED") -> str:
+    return json.dumps(
+        {
+            "enabled": 0,
+            "profile": "n/a",
+            "devices": [],
+            "errors": [code],
+            "err": {
+                "level": level,
+                "code": code,
+                "where": where,
+                "hint": hint or "",
+            },
+        },
+        ensure_ascii=False,
+    )
+
+def write_atomic(data: str) -> None:
+    tmp_path = OUT + ".tmp"
+    with open(tmp_path, "w") as f:
+        f.write(data)
+    os.replace(tmp_path, OUT)
+
+def purge_tmp_orphans_feed() -> None:
+    try:
+        for name in os.listdir("/tmp"):
+            if name.startswith("avp_webui_out."):
+                pid = name.split(".")[-1]
+                if not pid.isdigit():
+                    continue
+                try:
+                    os.kill(int(pid), 0)
+                    continue
+                except Exception:
+                    pass
+                try:
+                    os.remove(os.path.join("/tmp", name))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+def acquire_lock_or_exit() -> None:
+    try:
+        os.mkdir(LOCK_DIR)
+        return
+    except FileExistsError:
+        pid_path = os.path.join(LOCK_DIR, "pid")
+        if os.path.isfile(pid_path):
+            try:
+                with open(pid_path) as f:
+                    p = int(f.read().strip())
+                os.kill(p, 0)
+                print(f"running pid={p}")
+                raise SystemExit(0)
+            except Exception:
+                pass
+        try:
+            for root, dirs, files in os.walk(LOCK_DIR, topdown=False):
+                for fn in files:
+                    os.remove(os.path.join(root, fn))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(LOCK_DIR)
+            os.mkdir(LOCK_DIR)
+        except Exception:
+            print("busy")
+            raise SystemExit(1)
+    except Exception:
+        print("busy")
+        raise SystemExit(1)
+
+def release_lock() -> None:
+    try:
+        if os.path.isdir(LOCK_DIR):
+            for root, dirs, files in os.walk(LOCK_DIR, topdown=False):
+                for fn in files:
+                    os.remove(os.path.join(root, fn))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(LOCK_DIR)
+    except Exception:
+        pass
+
+def feed_cleanup() -> None:
+    try:
+        if os.path.isfile(PID_FILE):
+            pid_str = Path(PID_FILE).read_text().strip()
+            if pid_str.isdigit() and int(pid_str) == os.getpid():
+                os.remove(PID_FILE)
+    except Exception:
+        pass
+    pid_lock = os.path.join(LOCK_DIR, "pid")
+    try:
+        if os.path.isfile(pid_lock):
+            pid_str = Path(pid_lock).read_text().strip()
+            if pid_str.isdigit() and int(pid_str) == os.getpid():
+                release_lock()
+    except Exception:
+        pass
+
+def run_loop() -> None:
+    sleep_s = BASE_SLEEP
+    while True:
+        if os.access(CLI, os.X_OK):
+            try:
+                proc = subprocess.run([CLI, "status"], capture_output=True, text=True)
+                if proc.returncode == 0:
+                    data = proc.stdout.strip()
+                    feed_epoch = int(time.time())
+                    if data.endswith("}"):
+                        json_with_epoch = f"{data[:-1]},\\\"feed_epoch\\\":{feed_epoch}}}"
+                    else:
+                        json_with_epoch = data
+                    try:
+                        write_atomic(json_with_epoch)
+                    except Exception:
+                        log_warn("failed to write JSON")
+                        err_json = json_err("json_write_failed", "ERR", f"veja {LOGW}", "FEED")
+                        write_atomic(err_json)
+                        sleep_s = min(sleep_s * 2, MAX_BACKOFF)
+                        time.sleep(sleep_s)
+                        continue
+                    log_state(f"ok (sleep={sleep_s}s)")
+                    sleep_s = BASE_SLEEP
+                else:
+                    log_warn("cli status returned non-zero")
+                    err_json = json_err(
+                        "cli_failed",
+                        "ERR",
+                        f"cli status falhou; veja {LOGW}",
+                        "FEED",
+                    )
+                    write_atomic(err_json)
+                    sleep_s = min(sleep_s * 2, MAX_BACKOFF)
+            except Exception:
+                log_warn(f"cli missing or not executable: {CLI}")
+                err_json = json_err(
+                    "cli_missing_or_not_executable",
+                    "ERR",
+                    f"verifique permissões/arquivo em {CLI}",
+                    "FEED",
+                )
+                write_atomic(err_json)
+                sleep_s = min(sleep_s * 2, MAX_BACKOFF)
+        else:
+            log_warn(f"cli missing or not executable: {CLI}")
+            err_json = json_err(
+                "cli_missing_or_not_executable",
+                "ERR",
+                f"verifique permissões/arquivo em {CLI}",
+                "FEED",
+            )
+            write_atomic(err_json)
+            sleep_s = min(sleep_s * 2, MAX_BACKOFF)
+        time.sleep(sleep_s)
+
+def start() -> int:
+    if os.path.isfile(PID_FILE):
+        try:
+            pid = int(Path(PID_FILE).read_text().strip())
+            os.kill(pid, 0)
+            print(f"running pid={pid}")
+            return 0
+        except Exception:
+            pass
+    purge_tmp_orphans_feed()
+    acquire_lock_or_exit()
+    pid = os.fork()
+    if pid > 0:
+        try:
+            Path(PID_FILE).write_text(str(pid))
+        except Exception:
+            pass
+        try:
+            os.makedirs(LOCK_DIR, exist_ok=True)
+            with open(os.path.join(LOCK_DIR, "pid"), "w") as f:
+                f.write(str(pid))
+        except Exception:
+            pass
+        time.sleep(1)
+        try:
+            os.kill(pid, 0)
+        except Exception:
+            log_warn(f"start: loop died immediately (pid={pid})")
+            err_json = json_err(
+                "feed_loop_died",
+                "ERR",
+                f"loop morreu ao iniciar; veja {LOGW}",
+                "FEED",
+            )
+            write_atomic(err_json)
+            try:
+                os.remove(PID_FILE)
+            except Exception:
+                pass
+            release_lock()
+            print("stopped")
+            return 1
+        print(f"started pid={pid}")
+        return 0
+    else:
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        atexit.register(feed_cleanup)
+        run_loop()
+        return 0
+
+def stop() -> int:
+    pid = None
+    if os.path.isfile(PID_FILE):
+        try:
+            pid = int(Path(PID_FILE).read_text().strip())
+        except Exception:
+            pid = None
+    if pid:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except Exception:
+            pass
+    try:
+        os.remove(PID_FILE)
+    except Exception:
+        pass
+    release_lock()
+    print("stopped")
+    return 0
+
+def status_cmd() -> int:
+    for path in [PID_FILE, os.path.join(LOCK_DIR, "pid")]:
+        if os.path.isfile(path):
+            try:
+                pid = int(Path(path).read_text().strip())
+                os.kill(pid, 0)
+                print(f"running pid={pid}")
+                return 0
+            except Exception:
+                pass
+    print("stopped")
+    return 0
+
+def main(argv=None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        print(f"Usage: {sys.argv[0]} {{start|stop|status}}")
+        return 1
+    cmd = argv[0]
+    if cmd == "start":
+        return start()
+    if cmd == "stop":
+        return stop()
+    if cmd == "status":
+        return status_cmd()
+    print(f"Usage: {sys.argv[0]} {{start|stop|status}}")
+    return 1
+
+if __name__ == "__main__":
+    raise SystemExit(main())
