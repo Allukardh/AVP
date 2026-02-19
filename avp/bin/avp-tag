@@ -4,11 +4,10 @@
 # Component : AVP-TAG
 # File      : avp-tag
 # Role      : Tagger/publisher (V2-only: external changelog; guardrails for ck/* and rel/*)
-# Version   : v2.0.1 (2026-02-18)
+# Version   : v2.0.2 (2026-02-18)
 # Status    : stable
 # =============================================================
-
-SCRIPT_VER="v2.0.1"
+SCRIPT_VER = "v2.0.2"
 
 import argparse
 import datetime as _dt
@@ -40,14 +39,27 @@ def err(msg: str) -> None:
     print(f"{ts()} [TAG] ERR: {msg}", file=sys.stderr)
 
 def run(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=str(REPO), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=check)
+    return subprocess.run(
+        cmd,
+        cwd=str(REPO),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=check,
+    )
 
 def git_out(args: List[str]) -> str:
     r = run(["git"] + args, check=True)
     return (r.stdout or "").strip()
 
 def git_rc(args: List[str]) -> int:
-    r = subprocess.run(["git"] + args, cwd=str(REPO), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    r = subprocess.run(
+        ["git"] + args,
+        cwd=str(REPO),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
     if r.stdout:
         print(r.stdout.rstrip())
     return r.returncode
@@ -55,7 +67,7 @@ def git_rc(args: List[str]) -> int:
 def require_clean_tree() -> None:
     st = git_out(["status", "--porcelain"])
     if st.strip():
-        raise SystemExit("ERROR: working tree sujo. Faça commit antes de tag.")
+        raise SystemExit("ERROR: working tree sujo.\nFaça commit/stash antes de tag.")
 
 def require_up_to_date_origin_main() -> None:
     head = git_out(["rev-parse", "HEAD"])
@@ -65,12 +77,17 @@ def require_up_to_date_origin_main() -> None:
         return
     origin = git_out(["rev-parse", "origin/main"])
     if head != origin:
-        raise SystemExit("ERROR: HEAD != origin/main. Faça push do main antes de tag.")
+        raise SystemExit("ERROR: HEAD != origin/main.\nFaça push do main antes de tag.")
 
 def meta_check_file(rel: str) -> None:
     if not META.exists() or not os.access(META, os.X_OK):
         raise SystemExit("ERROR: avp-meta não encontrado/executável (obrigatório no V2).")
-    rc = subprocess.run([str(META), "--check", "--targets", rel], cwd=str(REPO), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rc = subprocess.run(
+        [str(META), "--check", "--targets", rel],
+        cwd=str(REPO),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     if rc.returncode != 0:
         raise SystemExit(f"ERROR: META gate falhou em {rel}")
 
@@ -93,25 +110,23 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--help", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="não cria/push, só mostra comandos")
     ap.add_argument("--publish", action="store_true", help="faz push do tag em origin após criar")
-
     ap.add_argument("kind", nargs="?", default="", help="ck|rel")
-    ap.add_argument("name", nargs="?", default="", help="ex: py_smoke_v2_20260218 (ck) ou v2.0.1 (rel)")
+    ap.add_argument("name", nargs="?", default="", help="ex: py_smoke_v2_20260218 (ck) ou v2.0.2 (rel)")
     ap.add_argument("message", nargs="?", default="", help="mensagem do tag")
     ap.add_argument("ref", nargs="?", default="HEAD", help="ref alvo (default HEAD)")
-
     ns = ap.parse_args(argv)
 
     if ns.help or not ns.kind or not ns.name or not ns.message:
         print(
             "Usage:\n"
-            "  avp-tag --publish ck <slug> \"Mensagem\" [ref]\n"
+            "  avp-tag --publish ck  <name> \"Mensagem\" [ref]\n"
             "  avp-tag --publish rel <vX.Y.Z> \"Mensagem\" [ref]\n"
             "  avp-tag --dry-run ...\n\n"
             "Notas:\n"
             "- V2-only: sem changelog interno; histórico em avp/changelog/tag.md\n"
             "- Exige working tree limpo e HEAD == origin/main (best-effort).\n"
         )
-        return RC_OK
+        return RC_OK if ns.help else RC_FAIL
 
     if ns.kind not in ("ck", "rel"):
         err("kind inválido: use ck ou rel")
@@ -122,11 +137,12 @@ def main(argv: List[str]) -> int:
     if ns.kind == "rel" and not REL_RE.match(tag):
         raise SystemExit("ERROR: rel deve ser rel/vX.Y.Z")
     if ns.kind == "ck" and not CK_RE.match(tag):
-        raise SystemExit("ERROR: ck deve ser ck/<slug> (A-Za-z0-9._-)")
+        raise SystemExit("ERROR: ck deve ser ck/ (A-Za-z0-9._-)")
 
     require_clean_tree()
     require_up_to_date_origin_main()
 
+    # self-gate
     meta_check_file("avp/bin/avp-tag")
 
     create_tag(tag, ns.message, ns.ref, ns.dry_run)

@@ -4,11 +4,10 @@
 # Component : AVP-COMMIT
 # File      : avp-commit
 # Role      : Git commit gate (V2-only: delegates governance to avp-meta; external changelog)
-# Version   : v2.0.1 (2026-02-18)
+# Version   : v2.0.2 (2026-02-18)
 # Status    : stable
 # =============================================================
-
-SCRIPT_VER="v2.0.1"
+SCRIPT_VER = "v2.0.2"
 
 import argparse
 import datetime as _dt
@@ -22,9 +21,10 @@ RC_OK = 0
 RC_FAIL = 1
 
 SELF = Path(__file__).resolve()
-AVP_ROOT = SELF.parents[1]      # .../avp
-REPO_ROOT = SELF.parents[2]     # .../jffs/scripts
-BIN_DIR = SELF.parent           # .../avp/bin
+AVP_ROOT = SELF.parents[1]   # .../avp
+REPO_ROOT = SELF.parents[2]  # .../jffs/scripts
+BIN_DIR = SELF.parent        # .../avp/bin
+
 LOG_DIR = AVP_ROOT / "logs"
 LOG_FILE = LOG_DIR / "avp_gitops.log"
 
@@ -125,7 +125,7 @@ def main(argv: List[str]) -> int:
     if ns.help or not ns.message:
         print(
             "Usage:\n"
-            "  avp-commit -m \"<msg>\" [--add-all] [--no-push] [--allow-dirty]\n"
+            "  avp-commit -m \"...\" [--add-all] [--no-push] [--allow-dirty]\n"
             "\n"
             "Notes (V2):\n"
             "- Governança (header/SCRIPT_VER/changelog externo) é SSOT via avp-meta --check.\n"
@@ -142,7 +142,7 @@ def main(argv: List[str]) -> int:
     if not ns.allow_dirty:
         unstaged = git_lines(["diff", "--name-only"])
         if unstaged:
-            err("working tree tem mudanças não staged. Use --allow-dirty ou faça git add -A.")
+            err("working tree tem mudanças não staged.\nUse --allow-dirty ou faça git add -A.")
             for x in unstaged[:50]:
                 print(x)
             return RC_FAIL
