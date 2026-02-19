@@ -1,0 +1,75 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-CHANGELOG-IMPORT
+# File      : avp-changelog-import
+# Role      : Migration helper (import legacy changelog from minified .sh and normalize minified .md)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import argparse
+import re
+import sys
+
+RE_VERLINE = re.compile(r"#\s*-\s*(\d+\.\d+\.\d+)\s*\((\d{4}-\d{2}-\d{2})\)\s*:\s*([^#\n]+)")
+RE_MD_VHDR  = re.compile(r"\s##\s+(v[\w\.\-]+)\s*\((\d{4}-\d{2}-\d{2})\)")
+
+def normalize_md(text: str) -> str:
+    t = text.strip()
+    if not t:
+        return ""
+    # força quebras antes de headers "##"
+    t = re.sub(r"\s##\s+", "\n\n## ", t)
+    # força quebras de bullet "- " quando estiver colado após header/linha
+    t = re.sub(r"\)\s+-\s+", ")\n- ", t)
+    # garante título em linha única
+    if t.startswith("# ") and "## " in t.splitlines()[0]:
+        # separa título do primeiro header
+        line0 = t.splitlines()[0]
+        title, rest = line0.split("##", 1)
+        t = title.strip() + "\n\n##" + rest.strip() + "\n" + "\n".join(t.splitlines()[1:])
+    return t.rstrip() + "\n"
+
+def import_from_sh(component: str, sh_text: str) -> str:
+    items = RE_VERLINE.findall(sh_text)
+    out = [f"# {component}", ""]
+    if not items:
+        out += ["(sem entradas detectadas no legado)", ""]
+        return "\n".join(out).rstrip() + "\n"
+    for ver, date, msg in items:
+        out.append(f"## v{ver} ({date})")
+        out.append(f"- {msg.strip()}")
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+def main(argv):
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--help", action="store_true")
+    ap.add_argument("--component", type=str, default="")
+    ap.add_argument("--from", dest="src", choices=("sh","md","auto"), default="auto")
+    ns = ap.parse_args(argv)
+
+    if ns.help or not ns.component:
+        sys.stdout.write(
+            "Usage:\n"
+            "  avp-changelog-import --component AVP-XXX --from sh|md|auto < input > out.md\n"
+        )
+        return 0 if ns.help else 2
+
+    data = sys.stdin.read()
+
+    if ns.src == "md" or (ns.src == "auto" and data.lstrip().startswith("# ")):
+        # normaliza md minificado (mantém conteúdo)
+        if not data.lstrip().startswith("# "):
+            data = f"# {ns.component}\n\n" + data
+        sys.stdout.write(normalize_md(data))
+        return 0
+
+    # default: sh
+    sys.stdout.write(import_from_sh(ns.component, data))
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
