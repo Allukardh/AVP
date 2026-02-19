@@ -1,0 +1,197 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-CLEAN-JUNK
+# File      : avp-clean-junk
+# Role      : Safe cleanup of common untracked junk (dry-run default)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import argparse
+import datetime as _dt
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Iterable, List
+
+RC_OK = 0
+RC_FAIL = 1
+
+DEFAULT_ROOT = "/jffs/scripts"
+
+EXCLUDE_PREFIXES = (
+    ".git/",
+    "backups/",
+    "autovpn/",
+    "avp/state/",
+    "avp/cache/",
+    "avp/logs/",
+)
+
+JUNK_NAMES = (
+    ".DS_Store",
+    "Thumbs.db",
+    "nohup.out",
+)
+
+JUNK_SUFFIXES = (
+    ".new",
+    ".patch",
+    ".rej",
+    ".orig",
+    ".tmp",
+    "~",
+)
+
+JUNK_EXACT = (
+    "core",
+)
+
+def ts() -> str:
+    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def say(msg: str) -> None:
+    print(f"{ts()} [CLEAN] {msg}")
+
+def die(msg: str) -> "None":
+    print(f"{ts()} [CLEAN] ERROR: {msg}", file=sys.stderr)
+    raise SystemExit(RC_FAIL)
+
+def usage() -> str:
+    return (
+        "Usage:\n"
+        "  avp-clean-junk.sh --scan\n"
+        "  avp-clean-junk.sh --apply --yes\n"
+        "Options:\n"
+        "  --root PATH  repo root (default: /jffs/scripts)\n"
+        "Safety:\n"
+        "  - --apply requires git repo and removes ONLY untracked files.\n"
+        "  - Never touches: .git/, backups/, autovpn/, avp/state/, avp/cache/, avp/logs/\n"
+    )
+
+def is_excluded(rel: str) -> bool:
+    rel = rel.lstrip("./")
+    for p in EXCLUDE_PREFIXES:
+        if rel == p[:-1] or rel.startswith(p):
+            return True
+    return False
+
+def is_junk(path: Path) -> bool:
+    name = path.name
+    if name in JUNK_NAMES:
+        return True
+    if name in JUNK_EXACT:
+        return True
+    if name.startswith("core.") and name != "core":
+        return True
+    if name.endswith(".swp") and name.startswith("."):
+        return True
+    for suf in JUNK_SUFFIXES:
+        if suf == "~":
+            if name.endswith("~"):
+                return True
+        else:
+            if name.endswith(suf):
+                return True
+    return False
+
+def git_ok(root: str) -> bool:
+    try:
+        subprocess.run(
+            ["git", "-C", root, "rev-parse", "--is-inside-work-tree"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            text=True,
+        )
+        return True
+    except Exception:
+        return False
+
+def is_tracked(root: str, rel: str) -> bool:
+    # mimica: git ls-files --error-unmatch "$rel"
+    try:
+        subprocess.run(
+            ["git", "-C", root, "ls-files", "--error-unmatch", rel],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            text=True,
+        )
+        return True
+    except Exception:
+        return False
+
+def walk_candidates(root: Path) -> Iterable[Path]:
+    # mimica do find do legado: arquivos regulares, exclui pastas, filtra por padrões de junk
+    for p in root.rglob("*"):
+        try:
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root).as_posix()
+            if is_excluded(rel):
+                continue
+            if is_junk(p):
+                yield p
+        except Exception:
+            continue
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--scan", action="store_true")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--root", type=str, default=DEFAULT_ROOT)
+    ap.add_argument("-h", "--help", action="store_true")
+    ns, extra = ap.parse_known_args(argv)
+
+    if extra:
+        die(f"unknown arg: {extra[0]}")
+
+    if ns.help:
+        print(usage())
+        return RC_OK
+
+    mode = "scan"
+    if ns.apply:
+        mode = "apply"
+    elif ns.scan:
+        mode = "scan"
+
+    root = ns.root
+    if not os.path.isdir(root):
+        die(f"root not found: {root}")
+
+    # export PATH/GIT_PAGER no legado: aqui assume bootstrap, mas não depende.
+    ok_git = git_ok(root)
+
+    if mode == "apply":
+        if not ns.yes:
+            die("--apply requires --yes")
+        if not ok_git:
+            die("refusing --apply without git repo")
+
+    rootp = Path(root)
+
+    for f in walk_candidates(rootp):
+        rel = f.relative_to(rootp).as_posix()
+        if ok_git and is_tracked(root, rel):
+            continue
+
+        if mode == "apply":
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                die(f"failed to remove: {rel}")
+            say(f"DEL untracked: {rel}")
+        else:
+            say(f"CANDIDATE: {rel}")
+
+    say(f"done (mode={mode})")
+    return RC_OK
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
