@@ -1,0 +1,143 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-HYGIENE-SCAN
+# File      : avp-hygiene-scan
+# Role      : Report-only scanner for hygiene issues (comments/blank lines/dead patterns)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Iterable, List, Tuple
+
+RC_OK = 0
+RC_WARN = 0   # compat: report-only -> não falha pipeline por achar issues
+RC_FAIL = 1
+
+DEFAULT_ROOT = "/jffs/scripts"
+
+EXCLUDE_PREFIXES = (
+    ".git/",
+    "backups/",
+    "autovpn/",
+    "avp/state/",
+    "avp/cache/",
+    "avp/logs/",
+)
+
+# Regras “higiene” (herdadas do espírito do legado)
+RE_TRAIL_WS = re.compile(r"[ \t]+$")
+RE_MULTI_BLANK = re.compile(r"\n{4,}", re.M)
+RE_TODO = re.compile(r"\b(TODO|FIXME|HACK)\b", re.I)
+
+def is_excluded(rel: str) -> bool:
+    rel = rel.lstrip("./")
+    for p in EXCLUDE_PREFIXES:
+        if rel == p[:-1] or rel.startswith(p):
+            return True
+    return False
+
+def iter_files(root: Path, include: List[str]) -> Iterable[Path]:
+    if include:
+        for x in include:
+            p = (root / x).resolve()
+            try:
+                rel = p.relative_to(root).as_posix()
+            except Exception:
+                continue
+            if is_excluded(rel):
+                continue
+            if p.is_file():
+                yield p
+        return
+
+    for p in root.rglob("*"):
+        try:
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root).as_posix()
+            if is_excluded(rel):
+                continue
+            # foco em scripts e webui relevantes; não precisa ser perfeito (scanner é report-only)
+            if rel.endswith((".sh", ".py", ".asp", ".js", ".css", ".md")):
+                yield p
+        except Exception:
+            continue
+
+def scan_text(rel: str, text: str) -> List[str]:
+    issues: List[str] = []
+
+    lines = text.splitlines()
+    # trailing whitespace
+    for i, ln in enumerate(lines, start=1):
+        if RE_TRAIL_WS.search(ln):
+            issues.append(f"{rel}:{i}: trailing whitespace")
+
+    # many blank lines (4+ seguidas)
+    if RE_MULTI_BLANK.search(text):
+        issues.append(f"{rel}: excessive blank lines (4+)")
+
+    # TODO/FIXME/HACK markers
+    for i, ln in enumerate(lines, start=1):
+        if RE_TODO.search(ln):
+            issues.append(f"{rel}:{i}: TODO/FIXME/HACK marker")
+
+    return issues
+
+def read_text_safe(p: Path) -> str:
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        try:
+            return p.read_text(errors="replace")
+        except Exception:
+            return ""
+
+def main(argv: List[str]) -> int:
+    ap = argparse.ArgumentParser(add_help=False)
+    ap.add_argument("--help", action="store_true")
+    ap.add_argument("--root", type=str, default=DEFAULT_ROOT)
+    ap.add_argument("--paths", nargs="*", default=[], help="optional explicit relative paths to scan")
+    ns = ap.parse_args(argv)
+
+    if ns.help:
+        print(
+            "Usage:\n"
+            "  avp-hygiene-scan [--root /jffs/scripts] [--paths file1 file2 ...]\n"
+            "Notes:\n"
+            "- report-only (never edits)\n"
+            "- excludes: .git/, backups/, autovpn/, avp/state/, avp/cache/, avp/logs/\n"
+        )
+        return RC_OK
+
+    root = Path(ns.root)
+    if not root.is_dir():
+        print(f"ERROR: root not found: {root}", file=sys.stderr)
+        return RC_FAIL
+
+    found: List[str] = []
+    for f in iter_files(root, ns.paths):
+        rel = f.relative_to(root).as_posix()
+        txt = read_text_safe(f)
+        if not txt:
+            continue
+        found.extend(scan_text(rel, txt))
+
+    # saída simples e determinística
+    if found:
+        for x in found:
+            print(x)
+        print(f"[HYGIENE] issues={len(found)}")
+    else:
+        print("[HYGIENE] OK (no issues)")
+
+    return RC_WARN if found else RC_OK
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
