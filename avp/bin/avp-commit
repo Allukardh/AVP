@@ -4,18 +4,19 @@
 # Component : AVP-COMMIT
 # File      : avp-commit
 # Role      : Git commit gate (V2-only: delegates governance to avp-meta; external changelog)
-# Version   : v2.0.2 (2026-02-18)
+# Version   : v2.0.3 (2026-02-18)
 # Status    : stable
 # =============================================================
-SCRIPT_VER = "v2.0.2"
+SCRIPT_VER = "v2.0.3"
 
 import argparse
 import datetime as _dt
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 RC_OK = 0
 RC_FAIL = 1
@@ -28,11 +29,10 @@ BIN_DIR = SELF.parent        # .../avp/bin
 LOG_DIR = AVP_ROOT / "logs"
 LOG_FILE = LOG_DIR / "avp_gitops.log"
 
-GOV_RELS = (
-    "services-start",
-    "post-mount",
-    "service-event",
-)
+GOV_RELS = ("services-start", "post-mount", "service-event")
+
+RE_VHDR = re.compile(r"^##\s+v", re.M)
+RE_WS_ONLY = re.compile(r"^\s*$")
 
 def _ts() -> str:
     return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -82,31 +82,108 @@ def run(cmd: List[str], cwd: Optional[Path] = None, check: bool = True) -> Tuple
         raise SystemExit(RC_FAIL)
     return p.returncode, out
 
+def git_out(args: List[str], check: bool = True) -> str:
+    _, out = run([GIT_BIN] + args, cwd=REPO_ROOT, check=check)
+    return out
+
 def git_lines(args: List[str]) -> List[str]:
-    _, out = run([GIT_BIN] + args, cwd=REPO_ROOT, check=True)
-    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+    out = git_out(args, check=True)
+    return [ln.rstrip("\n") for ln in out.splitlines() if ln.strip()]
 
 def meta_check(relpath: str) -> None:
     if not os.path.isfile(META_BIN) or not os.access(META_BIN, os.X_OK):
         raise SystemExit("ERROR: avp-meta não encontrado/executável (obrigatório no V2).")
     run([META_BIN, "--check", "--targets", relpath], cwd=REPO_ROOT, check=True)
 
-def governed_files(staged: List[str]) -> List[str]:
+def staged_name_status() -> List[Tuple[str, str]]:
+    # formato: "M\tpath" | "A\tpath" | "D\tpath"
+    rows = []
+    for ln in git_lines(["diff", "--name-status", "--cached"]):
+        parts = ln.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        st, path = parts[0].strip(), parts[1].strip()
+        if st:
+            rows.append((st, path))
+    return rows
+
+def governed_paths(rows: List[Tuple[str, str]]) -> List[str]:
     out: List[str] = []
-    for f in staged:
-        if f.startswith("avp/bin/"):
-            out.append(f)
-            continue
-        if f.startswith("avp/lib/"):
-            out.append(f)
-            continue
-        if f in GOV_RELS:
-            out.append(f)
-            continue
-        if f.startswith("avp/www/") and f.endswith(".asp"):
-            out.append(f)
-            continue
+    for st, p in rows:
+        # governamos também changelogs
+        if p.startswith("avp/changelog/") and p.endswith(".md"):
+            out.append(p); continue
+        if p.startswith("avp/bin/"):
+            out.append(p); continue
+        if p.startswith("avp/lib/"):
+            out.append(p); continue
+        if p in GOV_RELS:
+            out.append(p); continue
+        if p.startswith("avp/www/") and p.endswith(".asp"):
+            out.append(p); continue
     return out
+
+def _count_versions(s: str) -> int:
+    return len(RE_VHDR.findall(s))
+
+def _nonempty_lines(s: str) -> int:
+    return sum(1 for ln in s.splitlines() if not RE_WS_ONLY.match(ln))
+
+def read_head(path: str) -> Optional[str]:
+    # HEAD é o estado pré-commit
+    rc, out = run([GIT_BIN, "show", f"HEAD:{path}"], cwd=REPO_ROOT, check=False)
+    if rc != 0:
+        return None
+    return out
+
+def read_index(path: str) -> Optional[str]:
+    # ":" = conteúdo do INDEX (staged)
+    rc, out = run([GIT_BIN, "show", f":{path}"], cwd=REPO_ROOT, check=False)
+    if rc != 0:
+        return None
+    return out
+
+def changelog_guard(rows: List[Tuple[str, str]], allow_truncate: bool) -> None:
+    # Protege contra "consumir histórico": menos versões ou queda grande de conteúdo.
+    # Compara INDEX (novo) vs HEAD (antigo).
+    suspects = [(st, p) for st, p in rows if p.startswith("avp/changelog/") and p.endswith(".md")]
+    if not suspects:
+        return
+
+    for st, p in suspects:
+        if st == "D":
+            if not allow_truncate:
+                raise SystemExit(f"ERROR: changelog removido ({p}). Use --allow-changelog-truncate para forçar.")
+            continue
+
+        new = read_index(p)
+        if new is None:
+            raise SystemExit(f"ERROR: não consegui ler INDEX de {p}")
+
+        old = read_head(p)  # pode ser None se arquivo recém criado
+        if old is None:
+            continue
+
+        old_v = _count_versions(old)
+        new_v = _count_versions(new)
+
+        old_lines = _nonempty_lines(old)
+        new_lines = _nonempty_lines(new)
+
+        if new_v < old_v and not allow_truncate:
+            raise SystemExit(
+                f"ERROR: changelog truncado ({p}): versões caíram {old_v}->{new_v}. "
+                f"Use --allow-changelog-truncate para forçar."
+            )
+
+        # guard adicional: se “encolheu demais” e tinha conteúdo relevante antes
+        if old_lines >= 20:
+            ratio = (new_lines / old_lines) if old_lines else 1.0
+            if ratio < 0.70 and not allow_truncate:
+                raise SystemExit(
+                    f"ERROR: changelog suspeito ({p}): linhas úteis caíram {old_lines}->{new_lines} ({ratio:.2f}). "
+                    f"Use --allow-changelog-truncate para forçar."
+                )
 
 def main(argv: List[str]) -> int:
     if not GIT_BIN:
@@ -119,6 +196,7 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--add-all", action="store_true", help="run git add -A before commit")
     ap.add_argument("--no-push", action="store_true", help="do not push after commit (use only for offline/debug)")
     ap.add_argument("--allow-dirty", action="store_true", help="allow unstaged working tree changes")
+    ap.add_argument("--allow-changelog-truncate", action="store_true", help="allow reducing changelog history/content")
     ap.add_argument("-m", "--message", type=str, default="")
     ns = ap.parse_args(argv)
 
@@ -126,11 +204,12 @@ def main(argv: List[str]) -> int:
         print(
             "Usage:\n"
             "  avp-commit -m \"...\" [--add-all] [--no-push] [--allow-dirty]\n"
+            "             [--allow-changelog-truncate]\n"
             "\n"
             "Notes (V2):\n"
             "- Governança (header/SCRIPT_VER/changelog externo) é SSOT via avp-meta --check.\n"
-            "- Changelog é externo em ./avp/changelog/*.md (este script não lê changelog interno).\n"
-            "- Prova final: git show --stat --name-status HEAD.\n"
+            "- Changelog é externo em ./avp/changelog/*.md.\n"
+            "- Guard rail: avp/changelog/*.md é protegido contra truncamento (INDEX vs HEAD).\n"
         )
         return RC_OK if ns.help else RC_FAIL
 
@@ -150,15 +229,23 @@ def main(argv: List[str]) -> int:
     run([GIT_BIN, "diff", "--check"], cwd=REPO_ROOT, check=True)
     run([GIT_BIN, "diff", "--cached", "--check"], cwd=REPO_ROOT, check=True)
 
-    staged = git_lines(["diff", "--name-only", "--cached"])
-    if not staged:
+    rows = staged_name_status()
+    if not rows:
         err("nada staged para commitar.")
         return RC_FAIL
 
-    gov = governed_files(staged)
+    # guard rail de changelog (antes de qualquer coisa)
+    changelog_guard(rows, allow_truncate=ns.allow_changelog_truncate)
+
+    gov = governed_paths(rows)
     if gov:
-        for f in gov:
-            meta_check(f)
+        # meta gate em tudo governado EXCETO changelog md (que já tem guard próprio)
+        for p in gov:
+            if p.startswith("avp/changelog/") and p.endswith(".md"):
+                continue
+            if any(st == "D" and path == p for st, path in rows):
+                continue  # deletado: não roda meta
+            meta_check(p)
     else:
         log("WARN: nenhum arquivo governado detectado no staged (ok).")
 
