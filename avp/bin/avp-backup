@@ -1,0 +1,176 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-BACKUP
+# File      : avp-backup
+# Role      : Create AVP backup archive (report path; prune old backups)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import argparse
+import datetime as _dt
+import os
+import re
+import sys
+import tarfile
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+RC_OK = 0
+RC_FAIL = 1
+
+SELF = Path(__file__).resolve()
+AVP_ROOT = SELF.parents[1]      # /jffs/scripts/avp
+REPO_ROOT = SELF.parents[2]     # /jffs/scripts
+BACKUPS_DIR = AVP_ROOT / "backups"
+
+# exclusões seguras (não faz sentido backup de cache/logs/backups dentro do próprio backup)
+EXCLUDE_PREFIXES = (
+    ".git/",
+    "avp/backups/",
+    "avp/logs/",
+    "avp/cache/",
+    "avp/state/",
+)
+
+def ts() -> str:
+    return _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def log(msg: str) -> None:
+    print(msg)
+
+def err(msg: str) -> None:
+    print(msg, file=sys.stderr)
+
+def is_excluded(rel: str) -> bool:
+    rel = rel.lstrip("./")
+    for p in EXCLUDE_PREFIXES:
+        if rel == p[:-1] or rel.startswith(p):
+            return True
+    return False
+
+def safe_rel(p: Path, root: Path) -> Optional[str]:
+    try:
+        return p.relative_to(root).as_posix()
+    except Exception:
+        return None
+
+def collect_paths() -> List[Path]:
+    """Backup mínimo/seguro: pasta avp/ + hooks raiz relevantes se existirem."""
+    out: List[Path] = []
+    # avp/ inteiro
+    if AVP_ROOT.exists():
+        out.append(AVP_ROOT)
+    # hooks raiz relevantes pro AVP
+    for name in ("services-start", "service-event", "post-mount"):
+        p = REPO_ROOT / name
+        if p.exists():
+            out.append(p)
+    return out
+
+def add_tree(tf: tarfile.TarFile, base: Path, root: Path) -> None:
+    if base.is_file():
+        rel = safe_rel(base, root)
+        if not rel or is_excluded(rel):
+            return
+        tf.add(str(base), arcname=rel, recursive=False)
+        return
+
+    # dir
+    for p in base.rglob("*"):
+        if p.is_dir():
+            continue
+        rel = safe_rel(p, root)
+        if not rel or is_excluded(rel):
+            continue
+        tf.add(str(p), arcname=rel, recursive=False)
+
+def prune_backups(keep: int) -> None:
+    if keep <= 0:
+        return
+    if not BACKUPS_DIR.exists():
+        return
+    files = sorted([p for p in BACKUPS_DIR.iterdir() if p.is_file()], key=lambda x: x.stat().st_mtime, reverse=True)
+    for p in files[keep:]:
+        try:
+            p.unlink()
+        except Exception:
+            pass
+
+def parse_known_args(argv: List[str]) -> Tuple[argparse.Namespace, List[str]]:
+    """
+    Compat: aceita flags desconhecidas (não quebra callers legados).
+    """
+    ap = argparse.ArgumentParser(prog="avp-backup", add_help=False)
+    ap.add_argument("--help", action="store_true")
+    ap.add_argument("--outdir", type=str, default=str(BACKUPS_DIR))
+    ap.add_argument("--keep", type=int, default=10)
+    ap.add_argument("--name", type=str, default="")
+    ap.add_argument("--dry-run", action="store_true")
+    ns, rest = ap.parse_known_args(argv)
+    return ns, rest
+
+def main(argv: List[str]) -> int:
+    ns, unknown = parse_known_args(argv)
+
+    if ns.help:
+        print(
+            "Usage:\n"
+            "  avp-backup [--outdir DIR] [--keep N] [--name NAME] [--dry-run]\n"
+            "\n"
+            "Notes:\n"
+            "- Default: creates tar.gz in avp/backups\n"
+            "- Compat: unknown flags are ignored (legacy callers)\n"
+        )
+        return RC_OK
+
+    outdir = Path(ns.outdir)
+    try:
+        outdir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        err(f"ERROR: cannot create outdir: {outdir} ({e})")
+        return RC_FAIL
+
+    name = ns.name.strip() if ns.name else f"avp_backup_{ts()}.tgz"
+    # normalize extensão
+    if not re.search(r"\.(tgz|tar\.gz)$", name):
+        name += ".tgz"
+    outpath = outdir / name
+
+    targets = collect_paths()
+    if not targets:
+        err("ERROR: nothing to backup (avp/ missing?)")
+        return RC_FAIL
+
+    if unknown:
+        # só informa em modo humano; não falha.
+        log(f"[BACKUP] NOTE: ignoring unknown args: {' '.join(unknown)}")
+
+    if ns.dry_run:
+        log(f"[BACKUP] DRY-RUN out={outpath}")
+        for t in targets:
+            log(f"[BACKUP] include: {t}")
+        return RC_OK
+
+    try:
+        with tarfile.open(str(outpath), mode="w:gz") as tf:
+            for t in targets:
+                add_tree(tf, t, REPO_ROOT)
+    except Exception as e:
+        err(f"ERROR: failed to create archive: {e}")
+        try:
+            if outpath.exists():
+                outpath.unlink()
+        except Exception:
+            pass
+        return RC_FAIL
+
+    prune_backups(int(ns.keep))
+
+    log(f"[BACKUP] OK: {outpath}")
+    return RC_OK
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
