@@ -4,47 +4,109 @@
 # Component : AVP-CHANGELOG-IMPORT
 # File      : avp-changelog-import
 # Role      : Migration helper (import legacy changelog from minified .sh and normalize minified .md)
-# Version   : v2.0.0 (2026-02-18)
+# Version   : v2.0.1 (2026-02-18)
 # Status    : stable
 # =============================================================
-SCRIPT_VER = "v2.0.0"
+SCRIPT_VER = "v2.0.1"
 
 import argparse
 import re
 import sys
+from typing import List, Tuple, Optional
 
-RE_VERLINE = re.compile(r"#\s*-\s*(\d+\.\d+\.\d+)\s*\((\d{4}-\d{2}-\d{2})\)\s*:\s*([^#\n]+)")
-RE_MD_VHDR  = re.compile(r"\s##\s+(v[\w\.\-]+)\s*\((\d{4}-\d{2}-\d{2})\)")
-
+# -------- md normalizer --------
 def normalize_md(text: str) -> str:
-    t = text.strip()
+    t = (text or "").strip()
     if not t:
         return ""
-    # força quebras antes de headers "##"
     t = re.sub(r"\s##\s+", "\n\n## ", t)
-    # força quebras de bullet "- " quando estiver colado após header/linha
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    # bullets colados após header
     t = re.sub(r"\)\s+-\s+", ")\n- ", t)
-    # garante título em linha única
-    if t.startswith("# ") and "## " in t.splitlines()[0]:
-        # separa título do primeiro header
-        line0 = t.splitlines()[0]
-        title, rest = line0.split("##", 1)
-        t = title.strip() + "\n\n##" + rest.strip() + "\n" + "\n".join(t.splitlines()[1:])
+    t = re.sub(r"\)\s+\*\s+", ")\n- ", t)
+    # garante newline final única
     return t.rstrip() + "\n"
 
+# -------- legacy .sh importer (robusto para minificado) --------
+# Estratégia: split por '#' (comentários), porque em minificado ainda existem '#'
+# Detecta:
+#  - header de versão: "- v1.0.0 (YYYY-MM-DD): msg" ou "- 1.0.0 (...) : msg" ou "v1.0.0 (...)"
+#  - bullets: "* FIX: ..." ou "- FIX: ..." (vira "- ...")
+RE_VER = re.compile(r"^(?:-\s*)?(?:v)?(\d+\.\d+\.\d+)\s*\((\d{4}-\d{2}-\d{2})\)\s*:?\s*(.*)$")
+RE_BUL = re.compile(r"^(?:\*\s*|-)\s*(.+)$")
+
 def import_from_sh(component: str, sh_text: str) -> str:
-    items = RE_VERLINE.findall(sh_text)
-    out = [f"# {component}", ""]
-    if not items:
+    raw = sh_text.replace("\r\n", "\n").replace("\r", "\n")
+    parts = [p.strip() for p in raw.split("#") if p.strip()]
+
+    in_changelog = False
+    cur_ver: Optional[str] = None
+    cur_date: Optional[str] = None
+    entries: List[Tuple[str, str, List[str]]] = []
+
+    def start(ver: str, date: str, first_msg: str) -> None:
+        nonlocal cur_ver, cur_date, entries
+        cur_ver, cur_date = ver, date
+        bullets: List[str] = []
+        if first_msg:
+            bullets.append(first_msg.strip())
+        entries.append((ver, date, bullets))
+
+    def add_bullet(msg: str) -> None:
+        if not entries:
+            return
+        msg = msg.strip()
+        if not msg:
+            return
+        # evita duplicar idêntico colado
+        if entries[-1][2] and entries[-1][2][-1] == msg:
+            return
+        entries[-1][2].append(msg)
+
+    for p in parts:
+        # liga modo changelog quando encontrar token
+        if "CHANGELOG" in p.upper():
+            in_changelog = True
+            continue
+        if not in_changelog:
+            continue
+
+        # para quando chegar no SCRIPT_VER (fim típico do bloco de header)
+        if p.strip().startswith("SCRIPT_VER"):
+            break
+
+        # normaliza espaços
+        p2 = " ".join(p.split())
+
+        m = RE_VER.match(p2)
+        if m:
+            ver, date, rest = m.group(1), m.group(2), (m.group(3) or "").strip()
+            start(ver, date, rest)
+            continue
+
+        # bullets após um header de versão (mesmo colados)
+        mb = RE_BUL.match(p2)
+        if mb and entries:
+            add_bullet(mb.group(1))
+            continue
+
+    out: List[str] = [f"# {component}", ""]
+    if not entries:
         out += ["(sem entradas detectadas no legado)", ""]
         return "\n".join(out).rstrip() + "\n"
-    for ver, date, msg in items:
+
+    # respeita ordem encontrada (normalmente do mais novo pro mais antigo no header)
+    for ver, date, bul in entries:
         out.append(f"## v{ver} ({date})")
-        out.append(f"- {msg.strip()}")
+        if bul:
+            for b in bul:
+                out.append(f"- {b}")
+        else:
+            out.append("- (sem detalhes)")
         out.append("")
     return "\n".join(out).rstrip() + "\n"
 
-def main(argv):
+def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--help", action="store_true")
     ap.add_argument("--component", type=str, default="")
@@ -61,7 +123,6 @@ def main(argv):
     data = sys.stdin.read()
 
     if ns.src == "md" or (ns.src == "auto" and data.lstrip().startswith("# ")):
-        # normaliza md minificado (mantém conteúdo)
         if not data.lstrip().startswith("# "):
             data = f"# {ns.component}\n\n" + data
         sys.stdout.write(normalize_md(data))
