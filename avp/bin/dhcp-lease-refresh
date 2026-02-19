@@ -1,0 +1,150 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-DHCP-LEASE-REFRESH
+# File      : dhcp-lease-refresh
+# Role      : Force DHCP clients to re-acquire reserved IPs without router reboot (dnsmasq restart + optional Wi-Fi deauth)
+# Version   : v2.0.0 (2026-02-18)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import subprocess
+import sys
+from typing import List
+
+LEASES = "/var/lib/misc/dnsmasq.leases"
+
+def log(*a) -> None:
+    sys.stdout.write(" ".join(str(x) for x in a) + "\n")
+
+def usage() -> None:
+    log("Usage:")
+    log("  dhcp-lease-refresh [--deauth-all]")
+    log("What it does:")
+    log("- Clear /var/lib/misc/dnsmasq.leases")
+    log("- Restart dnsmasq (DHCP/DNS)")
+    log("- Show BEFORE/AFTER lease counts")
+    log("- Show current leases after restart (will fill as clients renew)")
+    log("- If --deauth-all: deauth all Wi-Fi clients on wl0/wl1/wl2 (forces reconnect + DHCP renew)")
+    log("Notes:")
+    log("- Wired devices may still need unplug/replug or DHCP renew on the device.")
+
+def run(cmd: List[str], check: bool = False, quiet: bool = False) -> int:
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if (not quiet) and p.stdout:
+            sys.stdout.write(p.stdout)
+        if check and p.returncode != 0:
+            return p.returncode
+        return p.returncode
+    except FileNotFoundError:
+        return 127
+
+def read_cmd(cmd: List[str]) -> str:
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        return (p.stdout or "").strip()
+    except FileNotFoundError:
+        return ""
+
+def wc_lines(path: str) -> None:
+    # manter “wc -l file || true” do legado
+    rc = run(["wc", "-l", path], check=False, quiet=False)
+    if rc != 0:
+        pass
+
+def nvram_get(key: str) -> str:
+    out = read_cmd(["nvram", "get", key])
+    return out.strip()
+
+def wl_assoclist(ifn: str) -> List[str]:
+    out = read_cmd(["wl", "-i", ifn, "assoclist"])
+    macs: List[str] = []
+    for ln in out.splitlines():
+        parts = ln.strip().split()
+        # legado usa awk '{print $2}' em linhas tipo: "assoclist AA:BB:..."
+        if len(parts) >= 2:
+            macs.append(parts[1])
+    return macs
+
+def wl_deauth(ifn: str, mac: str) -> None:
+    # legado ignora erro
+    try:
+        subprocess.run(["wl", "-i", ifn, "deauth", mac], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        pass
+
+def main(argv: List[str]) -> int:
+    deauth_all = False
+
+    if len(argv) >= 1 and argv[0] in ("-h", "--help"):
+        usage()
+        return 0
+    if len(argv) >= 1 and argv[0] == "--deauth-all":
+        deauth_all = True
+    elif len(argv) >= 1 and argv[0] != "":
+        log("ERR: unknown argument:", argv[0])
+        usage()
+        return 2
+
+    if not os.path.isfile(LEASES):
+        log("ERR: leases file not found:", LEASES)
+        return 1
+
+    log("=== DHCP Lease Refresh (dnsmasq) ===")
+    log("SCRIPT_VER=1.0.1")  # contrato legado imprime 1.0.1
+    log(f"LEASES={LEASES}")
+    log(f"DEAUTH_ALL={'1' if deauth_all else '0'}")
+    log("")
+
+    log("=== BEFORE: lease count ===")
+    wc_lines(LEASES)
+    log("")
+
+    # clear leases (": > file")
+    try:
+        with open(LEASES, "w", encoding="utf-8"):
+            pass
+    except Exception:
+        log("ERR: failed to clear leases:", LEASES)
+        return 1
+    log("OK: leases cleared")
+    log("")
+
+    log("=== Restarting dnsmasq ===")
+    rc = run(["service", "restart_dnsmasq"], check=False, quiet=False)
+    if rc != 0:
+        log("ERR: service restart_dnsmasq failed")
+        return 1
+    log("OK: dnsmasq restarted")
+    log("")
+
+    if deauth_all:
+        log("=== Deauth all Wi-Fi clients (wl0/wl1/wl2) ===")
+        ifnames = [nvram_get("wl0_ifname"), nvram_get("wl1_ifname"), nvram_get("wl2_ifname")]
+        for ifn in ifnames:
+            if not ifn:
+                continue
+            for mac in wl_assoclist(ifn):
+                if mac:
+                    wl_deauth(ifn, mac)
+        log("OK: deauth issued (clients should reconnect and renew DHCP)")
+        log("")
+
+    log("=== AFTER: lease count ===")
+    wc_lines(LEASES)
+    log("")
+    log("=== Current leases (may fill as clients renew) ===")
+    try:
+        with open(LEASES, "r", encoding="utf-8", errors="replace") as f:
+            sys.stdout.write(f.read())
+    except Exception:
+        pass
+    log("")
+    log("DONE.")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
