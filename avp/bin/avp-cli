@@ -1,0 +1,233 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-CLI
+# File      : avp-cli
+# Role      : Machine-readable status for WebUI/automation (Python version)
+# Version   : v2.0.0 (2026-02-19)
+# Status    : C1 (initial)
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import json
+import time
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+
+def sanitize_label(label: str) -> str:
+    out = label.lower()
+    out = ''.join(ch if ch.isalnum() or ch == '_' else '_' for ch in out)
+    while '__' in out:
+        out = out.replace('__', '_')
+    out = out.strip('_')
+    return out or 'device'
+
+def load_global(global_conf: str) -> Tuple[int, str, List[str]]:
+    errors: List[str] = []
+    enabled = 1
+    profile = 'balanced'
+    if not os.path.isfile(global_conf):
+        errors.append('global.conf_missing')
+        return enabled, profile, errors
+    try:
+        with open(global_conf, 'r') as f:
+            lines = f.readlines()
+    except Exception:
+        errors.append('global.conf_missing')
+        return enabled, profile, errors
+    autovpn_enabled: Optional[str] = None
+    autovpn_profile: Optional[str] = None
+    for line in lines:
+        line = line.strip()
+        if '=' not in line or line.startswith('#'):
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip()
+        if key == 'AUTOVPN_ENABLED' and autovpn_enabled is None:
+            autovpn_enabled = value
+        elif key == 'AUTOVPN_PROFILE' and autovpn_profile is None:
+            autovpn_profile = value
+    if autovpn_enabled is not None:
+        if autovpn_enabled == '0':
+            enabled = 0
+        elif autovpn_enabled == '1' or autovpn_enabled == '':
+            enabled = 1
+        else:
+            enabled = 1
+            errors.append('global.enabled_invalid')
+    if autovpn_profile is not None and autovpn_profile != '':
+        if autovpn_profile in ('balanced', 'performance', 'lunar'):
+            profile = autovpn_profile
+        else:
+            errors.append('global.profile_invalid')
+    return enabled, profile, errors
+
+def load_devices_from_conf(devices_conf: str, state_dir: str) -> Tuple[List[Tuple[str, str, str, str, str]], List[str]]:
+    errors: List[str] = []
+    devices: List[Tuple[str, str, str, str, str]] = []
+    if not os.path.isfile(devices_conf):
+        errors.append('devices.conf_missing')
+        return devices, errors
+    try:
+        with open(devices_conf, 'r') as f:
+            lines = f.readlines()
+    except Exception:
+        errors.append('devices.conf_missing')
+        return devices, errors
+    for line in lines:
+        line = line.rstrip('\r\n')
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        label, ip, pref = parts[:3]
+        sl = sanitize_label(label)
+        state_file = os.path.join(state_dir, f'avp_{sl}.state')
+        devices.append((label, ip, pref, state_file, sl))
+    return devices, errors
+
+def get_state_kv(state_file: str, key: str) -> str:
+    if not os.path.isfile(state_file):
+        return ''
+    try:
+        with open(state_file, 'r') as f:
+            for line in f:
+                line = line.rstrip('\n')
+                if not line or '=' not in line or line.startswith('#'):
+                    continue
+                k, v = line.split('=', 1)
+                if k == key:
+                    return v
+    except Exception:
+        return ''
+    return ''
+
+def err_meta(code: str, global_conf: str, devices_conf: str, cli_name: str) -> Tuple[str, str]:
+    mapping = {
+        'global.conf_missing': ('WARN', f'crie {global_conf}'),
+        'global.enabled_invalid': ('WARN', f'verifique AUTOVPN_ENABLED em {global_conf}'),
+        'global.profile_invalid': ('WARN', f'verifique AUTOVPN_PROFILE em {global_conf}'),
+        'devices.conf_missing': ('WARN', f'crie {devices_conf}'),
+        'cli.unknown_flag': ('ERR', f'use: {cli_name} status [--json|--pretty|--kv]'),
+        'cli.unknown_command': ('ERR', f'use: {cli_name} status [--json|--pretty|--kv]'),
+    }
+    return mapping.get(code, ('ERR', 'verifique logs e configs'))
+
+def build_json_status(enabled: int, profile: str, devices: List[Tuple[str, str, str, str, str]], error_codes: List[str], global_conf: str, devices_conf: str, cli_name: str) -> str:
+    devices_json: List[Dict[str, str]] = []
+    for label, ip, pref, state_file, _sl in devices:
+        mode = get_state_kv(state_file, 'dev_mode') or 'unknown'
+        table = get_state_kv(state_file, 'last_real_table') or ''
+        lse = get_state_kv(state_file, 'last_switch_epoch') or ''
+        devices_json.append({
+            'label': label,
+            'ip': ip,
+            'pref': pref,
+            'state': mode,
+            'route': table,
+            'table': table,
+            'last_switch_epoch': lse,
+        })
+    result: Dict[str, object] = {
+        'enabled': enabled,
+        'profile': profile,
+        'devices': devices_json,
+    }
+    if error_codes:
+        result['errors'] = error_codes
+        first = error_codes[0]
+        level, hint = err_meta(first, global_conf, devices_conf, cli_name)
+        result['err'] = {
+            'level': level,
+            'code': first,
+            'where': 'CLI',
+            'hint': hint,
+        }
+    return json.dumps(result, ensure_ascii=False)
+
+def build_kv_status(enabled: int, profile: str, devices: List[Tuple[str, str, str, str, str]], error_codes: List[str]) -> str:
+    lines: List[str] = []
+    lines.append(f'enabled={enabled}')
+    lines.append(f'profile={profile}')
+    for label, ip, pref, state_file, sl in devices:
+        mode = get_state_kv(state_file, 'dev_mode') or 'unknown'
+        table = get_state_kv(state_file, 'last_real_table') or ''
+        lse = get_state_kv(state_file, 'last_switch_epoch') or ''
+        lines.append(f'device_{sl}_label={label}')
+        lines.append(f'device_{sl}_ip={ip}')
+        lines.append(f'device_{sl}_pref={pref}')
+        lines.append(f'device_{sl}_state={mode}')
+        lines.append(f'device_{sl}_table={table}')
+        lines.append(f'device_{sl}_route={table}')
+        lines.append(f'device_{sl}_last_switch_epoch={lse}')
+    if error_codes:
+        lines.append(f'errors={" | ".join(error_codes)}')
+    return '\n'.join(lines)
+
+def show_help(cli_name: str) -> str:
+    return f"Usage:\\n  {cli_name} status [--json|--pretty|--kv]\\n\\nModes:\\n  status           JSON compacto (canonico, machine-friendly)\\n  status --pretty  JSON formatado (jq opcional; stderr warn)\\n  status --kv      KV (humano/grep-friendly)\\n"
+
+def main(argv: List[str]) -> int:
+    avp_root = os.environ.get('AVP_ROOT', '/jffs/scripts')
+    cli_name = Path(__file__).name
+    global_conf = f"{avp_root}/autovpn/policy/global.conf"
+    devices_conf = f"{avp_root}/autovpn/policy/devices.conf"
+    state_dir = f"{avp_root}/avp/state"
+    if not argv:
+        print(show_help(cli_name), end='')
+        return 0
+    cmd = argv[0]
+    if cmd in ('-h', '--help', 'help'):
+        print(show_help(cli_name), end='')
+        return 0
+    if cmd != 'status':
+        enabled, profile, errors = load_global(global_conf)
+        devices, dev_errors = load_devices_from_conf(devices_conf, state_dir)
+        errors.extend(dev_errors)
+        errors.append('cli.unknown_command')
+        print(build_json_status(enabled, profile, devices, errors, global_conf, devices_conf, cli_name))
+        strict = os.environ.get('AVP_CLI_STRICT', '0') == '1'
+        return 2 if strict else 0
+    mode = argv[1] if len(argv) > 1 else ''
+    enabled, profile, errors = load_global(global_conf)
+    devices, dev_errors = load_devices_from_conf(devices_conf, state_dir)
+    errors.extend(dev_errors)
+    if mode in ('', '--json'):
+        print(build_json_status(enabled, profile, devices, errors, global_conf, devices_conf, cli_name))
+        return 0
+    if mode == '--kv':
+        print(build_kv_status(enabled, profile, devices, errors))
+        return 0
+    if mode == '--pretty':
+        json_str = build_json_status(enabled, profile, devices, errors, global_conf, devices_conf, cli_name)
+        try:
+            import shutil
+            if shutil.which('jq'):
+                import subprocess
+                proc = subprocess.run(['jq', '.'], input=json_str.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if proc.returncode == 0:
+                    sys.stdout.buffer.write(proc.stdout)
+                    return 0
+                else:
+                    print('[WARN] jq failed; returning compact JSON', file=sys.stderr)
+                    print(json_str)
+                    return 0
+            else:
+                print('[WARN] jq not found; returning compact JSON', file=sys.stderr)
+                print(json_str)
+                return 0
+        except Exception:
+            print('[WARN] jq error; returning compact JSON', file=sys.stderr)
+            print(json_str)
+            return 0
+    errors.append('cli.unknown_flag')
+    print(build_json_status(enabled, profile, devices, errors, global_conf, devices_conf, cli_name))
+    strict = os.environ.get('AVP_CLI_STRICT', '0') == '1'
+    return 2 if strict else 0
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

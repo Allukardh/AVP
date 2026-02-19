@@ -1,0 +1,181 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-WEBUI
+# File      : avp-webui
+# Role      : WebUI installer/orchestrator (Python version)
+# Version   : v2.0.0 (2026-02-19)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import time
+import subprocess
+import shutil
+from pathlib import Path
+
+# Environment paths
+ADDON = "avp"
+ADDON_DIR = f"/jffs/addons/{ADDON}"
+WWW_DIR = f"{ADDON_DIR}/www"
+ASP_DST = "/www/user/avp.asp"
+JSON_DST = "/www/user/avp-status.json"
+SCRIPT_DIR = Path(__file__).resolve().parent
+CLI = "/jffs/scripts/avp-cli.sh"
+FEED = "/jffs/scripts/avp-webui-feed.sh"
+
+# Logging helpers
+def ts() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+def log(msg: str) -> None:
+    print(f"{ts()} [AVP-WEBUI] {msg}")
+
+def die(msg: str) -> None:
+    log(f"[ERR] {msg}")
+    raise SystemExit(1)
+
+def restart_httpd() -> None:
+    """Reinicia httpd (service restart ou SIGHUP) se estiver rodando."""
+    try:
+        subprocess.run(["pidof", "httpd"], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["service", "restart_httpd"], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["killall", "-HUP", "httpd"], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def find_asp_src() -> str:
+    """Encontra a fonte canônica do avp.asp (SSOT)."""
+    candidates = [
+        "/jffs/scripts/avp/www/avp.asp",
+        str(SCRIPT_DIR / "avp/www/avp.asp"),
+        f"{WWW_DIR}/avp.asp",
+        ASP_DST,
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return ""
+
+def link_www() -> None:
+    """Cria links simbólicos em /www/user para o asp e json dentro de addons."""
+    os.makedirs(WWW_DIR, exist_ok=True)
+    for dst in [ASP_DST, JSON_DST]:
+        try:
+            if os.path.islink(dst) or os.path.isfile(dst):
+                os.remove(dst)
+        except Exception:
+            pass
+    try:
+        os.symlink(f"{WWW_DIR}/avp.asp", ASP_DST)
+        os.symlink(f"{WWW_DIR}/avp-status.json", JSON_DST)
+    except Exception as e:
+        die(f"failed to create symlink: {e}")
+
+# Feed wrappers
+def feed_start() -> bool:
+    return subprocess.run([FEED, "start"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+def feed_stop() -> bool:
+    return subprocess.run([FEED, "stop"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+def feed_status() -> bool:
+    return subprocess.run([FEED, "status"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+def install() -> None:
+    """Instala o WebUI: copia avp.asp, cria JSON placeholder, linka e starta feeder."""
+    log("Installing AVP WebUI...")
+    os.makedirs(WWW_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(ASP_DST), exist_ok=True)
+
+    asp_src = find_asp_src()
+    if not asp_src:
+        die("avp.asp source not found. Expected in /jffs/scripts/avp/www or script directory")
+    dest = f"{WWW_DIR}/avp.asp"
+    # copia somente se não for o mesmo arquivo
+    try:
+        if not os.path.exists(dest) or not os.path.samefile(asp_src, dest):
+            shutil.copy2(asp_src, dest)
+    except FileNotFoundError:
+        shutil.copy2(asp_src, dest)
+    except Exception:
+        try:
+            shutil.copy2(asp_src, dest)
+        except Exception as e:
+            die(f"failed to copy avp.asp from {asp_src}: {e}")
+    try:
+        os.chmod(dest, 0o644)
+    except Exception:
+        pass
+
+    json_path = f"{WWW_DIR}/avp-status.json"
+    if not os.path.isfile(json_path):
+        try:
+            with open(json_path, "w") as f:
+                f.write('{"enabled":0,"profile":"n/a","devices":[]}')
+        except Exception:
+            pass
+    try:
+        os.chmod(json_path, 0o644)
+    except Exception:
+        pass
+
+    link_www()
+    restart_httpd()
+
+    if not (os.path.isfile(FEED) and os.access(FEED, os.X_OK)):
+        die(f"feeder not found or not executable: {FEED}")
+    if not feed_start():
+        die(f"failed to start feeder (see {json_path} and /tmp/avp_logs/avp_webui_warn.log)")
+    log("OK.")
+
+def uninstall() -> None:
+    """Remove o WebUI: para feeder, remove links e diretório de addon."""
+    log("Uninstalling AVP WebUI...")
+    if os.path.isfile(FEED) and os.access(FEED, os.X_OK):
+        feed_stop()
+    for dst in [ASP_DST, JSON_DST]:
+        try:
+            if os.path.islink(dst) or os.path.isfile(dst):
+                os.remove(dst)
+        except Exception:
+            pass
+    shutil.rmtree(ADDON_DIR, ignore_errors=True)
+    restart_httpd()
+    log("OK.")
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print(f"Usage: {Path(__file__).name} {{install|uninstall|start|stop|status}}")
+        return 1
+    cmd = sys.argv[1]
+    if cmd == "install":
+        install()
+    elif cmd == "uninstall":
+        uninstall()
+    elif cmd == "start":
+        if not feed_start():
+            return 1
+    elif cmd == "stop":
+        if not feed_stop():
+            return 1
+    elif cmd == "status":
+        return 0 if feed_status() else 1
+    else:
+        print(f"Usage: {Path(__file__).name} {{install|uninstall|start|stop|status}}")
+        return 1
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
