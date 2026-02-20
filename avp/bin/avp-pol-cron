@@ -1,0 +1,106 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-POL-CRON
+# File      : avp-pol-cron
+# Role      : Cron wrapper (timestamp + rc) for AVP-POL run
+# Version   : v2.0.0 (2026-02-20)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import time
+import subprocess
+
+# Constants
+ROTATE_MAX = 262144  # 256 KiB
+COMPONENT = "AVP-POL-CRON"
+POL = "/jffs/scripts/avp-pol.sh"
+
+def ts() -> str:
+    """Return timestamp in %F %T format."""
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+def rotate_if_big(path: str) -> None:
+    """Rotate log file if its size exceeds ROTATE_MAX."""
+    try:
+        if os.path.isfile(path) and os.path.getsize(path) >= ROTATE_MAX:
+            os.replace(path, path + ".1")
+    except Exception:
+        pass
+
+def emit_error(rc: int, msg: str) -> None:
+    """
+    Emit structured error JSON into avp_errors.log.
+    Fallback to /tmp if /jffs/scripts/logs is unavailable.
+    """
+    tsn = str(int(time.time()))
+    errd = "/jffs/scripts/logs"
+    errf = f"{errd}/avp_errors.log"
+    try:
+        os.makedirs(errd, exist_ok=True)
+    except Exception:
+        pass
+    line = f'{{"ts":"{tsn}","comp":"{COMPONENT}","msg":"{msg}","rc":{rc}}}'
+    try:
+        with open(errf, "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        try:
+            with open("/tmp/avp_errors.log", "a") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
+def main() -> int:
+    logdir = os.environ.get("AVP_LOGDIR", "/tmp/avp_logs")
+    try:
+        os.makedirs(logdir, exist_ok=True)
+    except Exception:
+        logdir = "/tmp/avp_logs"
+        os.makedirs(logdir, exist_ok=True)
+    log_path = f"{logdir}/avp-pol-cron.log"
+    rotate_if_big(log_path)
+
+    with open(log_path, "a") as log:
+        log.write(f"{ts()} [CRON] {COMPONENT} {SCRIPT_VER} START pid={os.getpid()}\n")
+        rc = 0
+        if not os.path.isfile(POL):
+            log.write(f"{ts()} [CRON] {COMPONENT} {SCRIPT_VER} ERR missing {POL}\n")
+            rc = 127
+        else:
+            # Execute policy script with 'run'
+            try:
+                proc = subprocess.run(["/bin/sh", POL, "run"], stdout=log, stderr=log)
+                rc = proc.returncode
+            except Exception:
+                rc = 1
+            if rc == 99:
+                log.write(f"{ts()} [CRON] {COMPONENT} {SCRIPT_VER} SKIP rc=99 (lock_active)\n")
+                rc = 0
+        log.write(f"{ts()} [CRON] {COMPONENT} {SCRIPT_VER} END rc={rc}\n")
+
+        if rc != 0:
+            # Append failure dump: status + last logs
+            log.write(f"{ts()} [CRON] failure_dump BEGIN rc={rc}\n")
+            try:
+                subprocess.run(["/bin/sh", POL, "status"], stdout=log, stderr=log)
+            except Exception:
+                pass
+            log.write("---- LAST LOG (head 80) ----\n")
+            try:
+                subprocess.run(["/bin/sh", POL, "run", "--show-last"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                # Use head -n 80 via Python
+                output = subprocess.check_output(["/bin/sh", POL, "run", "--show-last"], stderr=subprocess.STDOUT, text=True)
+                for line in output.splitlines()[:80]:
+                    log.write(line + "\n")
+            except Exception:
+                pass
+            log.write(f"{ts()} [CRON] failure_dump END rc={rc}\n")
+            emit_error(rc, "policy_apply_failed")
+    return rc
+
+if __name__ == "__main__":
+    sys.exit(main())
