@@ -1,0 +1,310 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-ACTION
+# File      : avp-action
+# Role      : Local action handler (whitelist + token + JSON)
+# Version   : v2.0.0 (2026-02-19)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import time
+import json
+import subprocess
+import re
+from pathlib import Path
+from typing import Optional, Tuple
+
+# State and token paths (configurable via env)
+AVP_STATE_DIR = os.environ.get('AVP_STATE_DIR', '/jffs/scripts/avp/state')
+AVP_TOKEN_FILE = os.environ.get('AVP_TOKEN_FILE', f"{AVP_STATE_DIR}/avp_gui.token")
+
+def ts_epoch() -> str:
+    return str(int(time.time()))
+
+def url_decode(s: str) -> str:
+    if not s:
+        return ''
+    s = s.replace('+', ' ')
+    s = s.replace('\\', '\\\\')
+    def repl(match: re.Match) -> str:
+        hexval = match.group(1)
+        try:
+            return bytes.fromhex(hexval).decode('latin-1')
+        except Exception:
+            return '%' + hexval
+    return re.sub(r'%([0-9A-Fa-f]{2})', repl, s)
+
+def jesc(s: str) -> str:
+    return s.replace('\\', '\\\\').replace('"', '\\"').replace('\t', '\\t').replace('\r', '\\r').replace('\n', '\\n')
+
+def json_reply(ok: int, rc: int, action: str, msg: str, data: Optional[str] = None) -> str:
+    okstr = 'true' if ok else 'false'
+    tsj = ts_epoch()
+    if not data:
+        data = '{}'
+    else:
+        data = data.rstrip()
+        try:
+            obj = json.loads(data)
+            data = json.dumps(obj, separators=(',', ':'), ensure_ascii=False)
+        except Exception:
+            data = '{}'
+    return (
+        '{'
+        f'"ok":{okstr},'
+        f'"rc":{rc},'
+        f'"action":"{jesc(action)}",'
+        f'"msg":"{jesc(msg)}",'
+        f'"data":{data},'
+        f'"ts":{tsj}'
+        '}'
+    )
+
+def err(rc: int = 1, action: str = 'err', msg: str = 'error', data: Optional[str] = None) -> None:
+    print(json_reply(0, rc, action, msg, data or '{}'))
+
+def ok(action: str = 'ok', msg: str = 'ok', data: Optional[str] = None) -> None:
+    print(json_reply(1, 0, action, msg, data or '{}'))
+
+def ensure_state() -> None:
+    os.makedirs(AVP_STATE_DIR, exist_ok=True)
+
+def read_token() -> Optional[str]:
+    ensure_state()
+    if not os.path.isfile(AVP_TOKEN_FILE):
+        return None
+    try:
+        with open(AVP_TOKEN_FILE, 'r') as f:
+            tok = f.read()
+        tok = tok.replace('\r', '').replace('\n', '').replace(' ', '').replace('"', '').replace("'", '').replace('\\', '')
+        return tok
+    except Exception:
+        return None
+
+def gen_token() -> str:
+    ensure_state()
+    try:
+        return os.urandom(16).hex()
+    except Exception:
+        return f"{int(time.time()*1000000):x}{os.getpid():x}".ljust(32, '0')[:32]
+
+def require_token(tok_in: str) -> Tuple[bool, Optional[int]]:
+    tok = read_token()
+    if not tok:
+        tok = gen_token()
+        try:
+            with open(AVP_TOKEN_FILE, 'w') as f:
+                f.write(tok + '\n')
+            os.chmod(AVP_TOKEN_FILE, 0o600)
+        except Exception:
+            pass
+    if not tok_in:
+        err(22, 'auth', 'missing token', '{"hint":"token required"}')
+        return False, 22
+    if tok_in != tok:
+        err(22, 'auth', 'invalid token', '{}')
+        return False, 22
+    return True, None
+
+def qs_get(key: str) -> str:
+    qs = os.environ.get('QUERY_STRING', '')
+    if not qs:
+        return ''
+    for kv in qs.split('&'):
+        if kv.startswith(key + '='):
+            v = kv[len(key) + 1:]
+            return url_decode(v)
+        elif kv == key:
+            return ''
+    return ''
+
+def is_private_ip(ip: str) -> bool:
+    parts = ip.split('.')
+    if len(parts) != 4:
+        return False
+    try:
+        o0, o1, o2, o3 = [int(p) for p in parts]
+    except ValueError:
+        return False
+    if o0 in (127, 10):
+        return True
+    if o0 == 192 and o1 == 168:
+        return True
+    if o0 == 172 and 16 <= o1 <= 31:
+        return True
+    return False
+
+def require_origin() -> Tuple[bool, Optional[int]]:
+    ip = os.environ.get('REMOTE_ADDR', '')
+    if not ip:
+        return True, None
+    if is_private_ip(ip):
+        return True, None
+    err(22, 'origin', 'forbidden', '{"hint":"LAN/local only"}')
+    return False, 22
+
+def unwrap_pol_data(polj: str) -> str:
+    try:
+        obj = json.loads(polj)
+        data = obj.get('data')
+        if data is None:
+            return '{}'
+        return json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+    except Exception:
+        return polj or '{}'
+
+def call_pol(args: list) -> Tuple[int, str]:
+    try:
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        stdout, _ = proc.communicate()
+        rc = proc.returncode
+        last_line = ''
+        for line in stdout.rstrip('\n').split('\n'):
+            if line.strip():
+                last_line = line
+        return rc, last_line
+    except Exception:
+        return 1, ''
+
+def main(argv: list) -> int:
+    action = ''
+    token = ''
+    label = ''
+    ip = ''
+    rule = ''
+    profile = ''
+    if os.environ.get('QUERY_STRING'):
+        action = qs_get('action')
+        token = qs_get('token')
+        label = qs_get('label')
+        ip = qs_get('ip')
+        rule = qs_get('rule')
+        profile = qs_get('profile')
+    else:
+        for kv in argv:
+            if '=' in kv:
+                k, v = kv.split('=', 1)
+                if k == 'action': action = v
+                elif k == 'token': token = v
+                elif k == 'label': label = v
+                elif k == 'ip': ip = v
+                elif k == 'rule': rule = v
+                elif k == 'profile': profile = v
+    if os.environ.get('QUERY_STRING'):
+        ok_origin, rc = require_origin()
+        if not ok_origin:
+            return rc or 22
+    if action == 'token_get':
+        ensure_state()
+        tok = read_token()
+        if not tok:
+            tok = gen_token()
+            try:
+                with open(AVP_TOKEN_FILE, 'w') as f:
+                    f.write(tok + '\\n')
+                os.chmod(AVP_TOKEN_FILE, 0o600)
+            except Exception:
+                pass
+        data = json.dumps({'token': tok}, separators=(',', ':'), ensure_ascii=False)
+        print(json_reply(1, 0, 'token_get', 'ok', data))
+        return 0
+    ok_tok, rc = require_token(token)
+    if not ok_tok:
+        return rc or 22
+    pol = '/jffs/scripts/avp-pol.sh'
+    if not (os.path.isfile(pol) and os.access(pol, os.X_OK)):
+        err(10, 'dispatch', 'avp-pol.sh not found', '{}')
+        return 10
+    if action == 'enable':
+        rc, _ = call_pol([pol, 'enable'])
+        if rc != 0:
+            err(30, 'enable', 'failed', '{}')
+            return 30
+        ok('enable', 'ok', '{}')
+        return 0
+    elif action == 'disable':
+        rc, _ = call_pol([pol, 'disable'])
+        if rc != 0:
+            err(30, 'disable', 'failed', '{}')
+            return 30
+        ok('disable', 'ok', '{}')
+        return 0
+    elif action == 'reload':
+        rc, _ = call_pol([pol, 'reload', '--async'])
+        if rc != 0:
+            err(30, 'reload', 'failed', '{}')
+            return 30
+        ok('reload', 'ok', '{}')
+        return 0
+    elif action == 'status':
+        rc, polj = call_pol([pol, 'status', '--json'])
+        data = unwrap_pol_data(polj) if polj else '{}'
+        print(json_reply(1, 0, 'status', 'ok', data))
+        return 0
+    elif action == 'snapshot':
+        rc, polj = call_pol([pol, 'snapshot'])
+        data = unwrap_pol_data(polj) if polj else '{}'
+        print(json_reply(1, 0, 'snapshot', 'ok', data))
+        return 0
+    elif action == 'profile_list':
+        subprocess.run([pol, 'profile', 'list'])
+        return 0
+    elif action == 'profile_get':
+        subprocess.run([pol, 'profile', 'get'])
+        return 0
+    elif action == 'profile_set':
+        if not profile:
+            err(22, 'profile_set', 'missing profile', '{}')
+            return 22
+        subprocess.run([pol, 'profile', 'set', profile])
+        return 0
+    elif action == 'device_list':
+        subprocess.run([pol, 'device', 'list'])
+        return 0
+    elif action == 'device_add':
+        if not label:
+            err(22, 'device_add', 'missing label', '{}')
+            return 22
+        if not ip:
+            err(22, 'device_add', 'missing ip', '{}')
+            return 22
+        if not rule:
+            rule = 'balanced'
+        subprocess.run([pol, 'device', 'add', label, ip, rule])
+        return 0
+    elif action == 'device_del':
+        if not label:
+            err(22, 'device_del', 'missing label', '{}')
+            return 22
+        subprocess.run([pol, 'device', 'del', label])
+        return 0
+    elif action == 'device_set':
+        if not label:
+            err(22, 'device_set', 'missing label', '{}')
+            return 22
+        if not ip:
+            err(22, 'device_set', 'missing ip', '{}')
+            return 22
+        if not rule:
+            rule = 'balanced'
+        subprocess.run([pol, 'device', 'set', label, ip, rule])
+        return 0
+    else:
+        allowed = [
+            "enable","disable","status","reload","snapshot",
+            "profile_list","profile_get","profile_set",
+            "device_list","device_add","device_del","device_set","token_get"
+        ]
+        allowed_json = json.dumps({"allowed": allowed}, separators=(',', ':'), ensure_ascii=False)
+        err(2, 'dispatch', 'invalid action', allowed_json)
+        return 2
+
+def cli() -> int:
+    return main(sys.argv[1:])
+
+if __name__ == '__main__':
+    sys.exit(cli())
