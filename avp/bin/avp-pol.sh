@@ -4,11 +4,14 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.22 (2026-02-09)
+# Version   : v1.3.23 (2026-02-20)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.3.23 (2026-02-20)
+#   * BREAK: remove auto-backup implicito (pre_run_backup) do fluxo run
+#   * CHG: backup passa a ser manual/on-demand
 # - v1.3.22 (2026-02-09)
 #   * HARDEN: fix_policy_perms tambem alinha ownership (chown UID:GID best-effort) nos .conf
 # - v1.3.21 (2026-02-09)
@@ -114,7 +117,7 @@
 # - v1.0.5 (2025-12-22)
 #   * CHORE: canonizacao AVP (engine=avp-eng.sh) + organizacao estrutural
 # - v1.0.4 (2025-12-21)
-#   * FIX: hook de auto-backup pre_run_backup()
+#   * NOTE: legado do auto-backup (removido no v1.3.23)
 # - v1.0.3 (2025-12-21)
 #   * FIX: parsing CRLF-safe + trims + defaults robustos
 # - v1.0.2 (2025-12-21)
@@ -125,13 +128,12 @@
 #   * BASE: enable/disable/status/run; delega execucao ao AVP-ENG
 # =============================================================
 
-SCRIPT_VER="v1.3.22"
+SCRIPT_VER="v1.3.23"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
 ENGINE="/jffs/scripts/avp/bin/avp-eng.sh"
-BACKUP_UTIL="/jffs/scripts/avp/bin/avp-backup.sh"
 
 POLICY_DIR="/jffs/scripts/avp/policy"
 GLOBAL_CONF="$POLICY_DIR/global.conf"
@@ -583,10 +585,6 @@ QUAR_AVOID_SEC=900
 EOF2
 }
 
-pre_run_backup() {
-  [ -x "$BACKUP_UTIL" ] || return 0
-  /bin/sh "$BACKUP_UTIL" >/dev/null 2>&1 || :
-}
 
 show_help() {
   cat <<EOF
@@ -1178,7 +1176,6 @@ cmd_run() {
 
   export AUTOVPN_PROFILE="${AUTOVPN_PROFILE:-$DEFAULT_PROFILE}"
 
-  pre_run_backup
 
   [ -f "$ENGINE" ] || { logger -t AVP-POL "ERR: engine_not_found ($ENGINE)"; return 1; }
   logger -t AVP-POL "run: profile=${AUTOVPN_PROFILE:-$DEFAULT_PROFILE}"

@@ -4,11 +4,15 @@
 # Component : AVP-UTIL
 # File      : avp-backup.sh
 # Role      : Version-aware backup utility (idempotente por versao)
-# Version   : v1.0.7 (2026-01-26)
+# Version   : v1.0.8 (2026-02-20)
 # Status    : stable
 # =============================================================
 #
 # CHANGELOG
+# - v1.0.8 (2026-02-20)
+#   * CHG: targets dinâmicos via git ls-files (repo-aware)
+#   * CHG: inclui hooks raiz + avp/bin + avp/lib (scripts versionados)
+#   * CHG: uso manual/on-demand (sem depender de auto-call do POL)
 # - v1.0.7 (2026-01-26)
 #   * VERSION: bump patch (pos harden canônico)
 # - v1.0.6 (2026-01-18)
@@ -29,28 +33,20 @@
 #   * ADD: destino fixo /jffs/scripts/backups
 # =============================================================
 
-SCRIPT_VER="v1.0.7"
+SCRIPT_VER="v1.0.8"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
 BACKUP_DIR="/jffs/scripts/avp/backups"
-
 mkdir -p "$BACKUP_DIR"
 
 get_version_token() {
   FILE="$1"
-
-  # Aceita:
-  #   "# VER       : vX"
-  #   "# VER       : vX (YYYY-MM-DD)"
   LINE="$(grep -im1 -E '^[[:space:]]*#[[:space:]]*(Version|VERSION)[[:space:]]*:' "$FILE")"
   [ -z "$LINE" ] && { echo "unknown"; return 0; }
-
-  # Extrai "vX.Y.Z" (primeira ocorrencia)
   VER="$(echo "$LINE" | sed -n 's/.*\(v[0-9][0-9.]*\).*/\1/p' | head -n 1)"
   [ -z "$VER" ] && VER="unknown"
-
   echo "$VER"
 }
 
@@ -62,7 +58,6 @@ backup_file() {
   BASE="$(basename "$SRC")"
   DST="$BACKUP_DIR/${BASE}.${VER}.bak"
 
-  # Idempotente por versao
   if [ -f "$DST" ]; then
     echo "SKIP: $BASE ($VER) ja existe"
     return 0
@@ -73,15 +68,22 @@ backup_file() {
   echo "ERR: falha ao copiar $BASE"
 }
 
-# Lista canonica (inclui self-backup)
-backup_file "/jffs/scripts/services-start"
-backup_file "/jffs/scripts/post-mount"
-backup_file "/jffs/scripts/avp/bin/avp-eng.sh"
-backup_file "/jffs/scripts/avp/bin/avp-pol.sh"
-backup_file "/jffs/scripts/avp/bin/avp-diag.sh"
-backup_file "/jffs/scripts/avp/bin/avp-cli.sh"
-backup_file "/jffs/scripts/avp/bin/avp-webui.sh"
-backup_file "/jffs/scripts/avp/bin/avp-webui-feed.sh"
-backup_file "/jffs/scripts/avp/bin/avp-backup.sh"
+# Lista dinâmica (repo-aware; inclui self-backup)
+list_targets() {
+  cd /jffs/scripts || return 1
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  git ls-files | grep -E \
+    '^(services-start|service-event|post-mount|avp/bin/[^/]+(\.sh)?|avp/lib/[^/]+\.sh)$' \
+    | while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        printf '/jffs/scripts/%s\n' "$rel"
+      done
+}
+
+list_targets | while IFS= read -r src; do
+  [ -n "$src" ] || continue
+  backup_file "$src"
+done
 
 exit 0
