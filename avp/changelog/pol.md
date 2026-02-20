@@ -1,3 +1,5 @@
+## v2.1.0 (2026-02-20)
+* EXP: controlador de políticas em Python — implementa comandos enable/disable, reload (sync/async), status (JSON), snapshot, gestão de perfis e dispositivos (add/set/del/list), lendo e gravando global.conf, profiles.conf e devices.conf. Usa avp-lib para logging e atualiza estado com state_set; delega execução do engine via avp-eng.
 # pol
 
 ## v2.0.0 (2026-02-20)

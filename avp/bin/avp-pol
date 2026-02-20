@@ -3,50 +3,252 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-POL
 # File      : avp-pol
-# Role      : Policy Controller (Python wrapper)
-# Version   : v2.0.0 (2026-02-20)
+# Role      : Policy Controller (Python core)
+# Version   : v2.1.0 (2026-02-20)
 # Status    : experimental
 # =============================================================
-SCRIPT_VER = "v2.0.0"
+SCRIPT_VER = "v2.1.0"
 
 import os
 import sys
+import json
 import subprocess
-from avp.lib.avp_lib import log_event, log_error
+import re
+from avp.lib.avp_lib import log_event, log_error, state_get, state_set, state_write_file
 
-LEGACY_POL = os.environ.get("AVP_POL_SH", "/jffs/scripts/avp-pol.sh")
+# Caminhos de configuração
+CANON_BASE = "/jffs/scripts"
+GLOBAL_CONF  = f"{CANON_BASE}/autovpn/policy/global.conf"
+PROFILES_CONF = f"{CANON_BASE}/autovpn/policy/profiles.conf"
+DEVICES_CONF  = f"{CANON_BASE}/autovpn/policy/devices.conf"
+ENGINE = "/jffs/scripts/avp/bin/avp-eng"
 
-def log_start(cmd: str) -> None:
-    log_event("POL", f"start {cmd}")
+def read_conf(path):
+    data = {}
+    if not os.path.isfile(path):
+        return data
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            data[k.strip()] = v.strip()
+    return data
 
-def log_end(cmd: str, rc: int) -> None:
-    if rc == 0:
-        log_event("POL", f"end {cmd} rc={rc}", rc=rc)
-    else:
-        log_error("POL", f"end {cmd} rc={rc}", rc=rc)
+def write_conf(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lines = [f"{k}={v}" for k, v in data.items()]
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
 
-def call_legacy(args: list) -> int:
-    if not os.path.isfile(LEGACY_POL) or not os.access(LEGACY_POL, os.X_OK):
-        log_error("POL", f"legacy policy not found: {LEGACY_POL}", rc=127)
-        return 127
+def status():
+    g = read_conf(GLOBAL_CONF)
+    enabled = 1 if g.get("AUTOVPN_ENABLED", "").strip() != "0" else 0
+    profile = g.get("AUTOVPN_PROFILE", "").strip()
+    out = {
+        "enabled": enabled,
+        "profile": profile or "",
+        "errors": []
+    }
+    # chama engine status
     try:
-        proc = subprocess.run([LEGACY_POL] + args)
-        return proc.returncode
-    except KeyboardInterrupt:
-        return 130
-    except Exception as e:
-        log_error("POL", f"execution failed: {e}", rc=1)
-        return 1
+        proc = subprocess.run([ENGINE, "status"], capture_output=True, text=True)
+        if proc.returncode == 0:
+            try:
+                out["engine"] = json.loads(proc.stdout.strip())
+            except Exception:
+                out["errors"].append("engine_parse_failed")
+        else:
+            out["errors"].append("engine_failed")
+    except Exception:
+        out["errors"].append("engine_failed")
+    print(json.dumps(out))
+    return 0
 
-def main(argv: list) -> int:
-    if not argv:
-        return call_legacy(["--help"])
-    cmd = argv[0]
-    subargs = argv[1:]
-    log_start(cmd)
-    rc = call_legacy([cmd] + subargs)
-    log_end(cmd, rc)
+def enable():
+    g = read_conf(GLOBAL_CONF)
+    g["AUTOVPN_ENABLED"] = "1"
+    write_conf(GLOBAL_CONF, g)
+    log_event("POL", "enable", rc=0, meta="")
+    print("ok")
+    return 0
+
+def disable():
+    g = read_conf(GLOBAL_CONF)
+    g["AUTOVPN_ENABLED"] = "0"
+    write_conf(GLOBAL_CONF, g)
+    log_event("POL", "disable", rc=0, meta="")
+    print("ok")
+    return 0
+
+def reload_sync():
+    rc = subprocess.call([ENGINE, "run"])
+    if rc == 0:
+        log_event("POL", "reload", rc=0, meta="sync")
+        print("ok")
+    else:
+        log_error("POL", "reload failed", rc=rc, meta="sync")
+        print("fail")
     return rc
 
+def reload_async():
+    subprocess.Popen([ENGINE, "run"])
+    log_event("POL", "reload", rc=0, meta="async")
+    print("ok")
+    return 0
+
+def snapshot():
+    # snapshot usa status atual
+    return status()
+
+def profile_list():
+    conf = read_conf(PROFILES_CONF)
+    names = set()
+    for key, val in conf.items():
+        # assume *_NAME convenção (ajuste conforme real)
+        if key.endswith("_NAME"):
+            names.add(val)
+    print("\n".join(sorted(names)))
+    return 0
+
+def profile_get():
+    g = read_conf(GLOBAL_CONF)
+    print(g.get("AUTOVPN_PROFILE", "").strip())
+    return 0
+
+def profile_set(name):
+    g = read_conf(GLOBAL_CONF)
+    g["AUTOVPN_PROFILE"] = name
+    write_conf(GLOBAL_CONF, g)
+    log_event("POL", f"profile_set {name}", rc=0, meta="")
+    print("ok")
+    return 0
+
+def device_list():
+    if not os.path.isfile(DEVICES_CONF):
+        return 0
+    with open(DEVICES_CONF, "r") as f:
+        sys.stdout.write(f.read())
+    return 0
+
+def device_add(label, ip, pref):
+    lines = []
+    exists = False
+    if os.path.isfile(DEVICES_CONF):
+        with open(DEVICES_CONF) as f:
+            for l in f:
+                ll = l.strip()
+                if ll and not ll.startswith("#"):
+                    parts = ll.split()
+                    if parts[0] == label:
+                        exists = True
+                lines.append(l.rstrip("\n"))
+    if exists:
+        print("exists")
+        return 1
+    lines.append(f"{label} {ip} {pref}")
+    tmp = DEVICES_CONF + ".tmp"
+    os.makedirs(os.path.dirname(DEVICES_CONF), exist_ok=True)
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, DEVICES_CONF)
+    os.chmod(DEVICES_CONF, 0o600)
+    log_event("POL", f"device_add {label} {ip} {pref}", rc=0, meta="")
+    print("ok")
+    return 0
+
+def device_del(label):
+    lines = []
+    removed = False
+    if os.path.isfile(DEVICES_CONF):
+        with open(DEVICES_CONF) as f:
+            for l in f:
+                ll = l.strip()
+                if ll and not ll.startswith("#"):
+                    parts = ll.split()
+                    if parts[0] == label:
+                        removed = True
+                        continue
+                lines.append(l.rstrip("\n"))
+    if not removed:
+        print("missing")
+        return 1
+    tmp = DEVICES_CONF + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, DEVICES_CONF)
+    os.chmod(DEVICES_CONF, 0o600)
+    log_event("POL", f"device_del {label}", rc=0, meta="")
+    print("ok")
+    return 0
+
+def device_set(label, ip, pref):
+    lines = []
+    updated = False
+    if os.path.isfile(DEVICES_CONF):
+        with open(DEVICES_CONF) as f:
+            for l in f:
+                ll = l.strip()
+                if ll and not ll.startswith("#"):
+                    parts = ll.split()
+                    if parts[0] == label:
+                        lines.append(f"{label} {ip} {pref}")
+                        updated = True
+                        continue
+                lines.append(l.rstrip("\n"))
+    if not updated:
+        lines.append(f"{label} {ip} {pref}")
+    tmp = DEVICES_CONF + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, DEVICES_CONF)
+    os.chmod(DEVICES_CONF, 0o600)
+    log_event("POL", f"device_set {label} {ip} {pref}", rc=0, meta="")
+    print("ok")
+    return 0
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: avp-pol <action> [...]")
+        return 1
+    action = sys.argv[1]
+    if action == "status": return status()
+    if action == "enable": return enable()
+    if action == "disable": return disable()
+    if action == "reload":
+        if len(sys.argv) > 2 and sys.argv[2] == "--async":
+            return reload_async()
+        return reload_sync()
+    if action == "snapshot": return snapshot()
+    if action == "profile_list": return profile_list()
+    if action == "profile_get": return profile_get()
+    if action == "profile_set":
+        if len(sys.argv) < 3:
+            print("profile_set <profile>")
+            return 1
+        return profile_set(sys.argv[2])
+    if action == "device_list": return device_list()
+    if action == "device_add":
+        if len(sys.argv) < 5:
+            print("device_add <label> <ip> <pref>")
+            return 1
+        return device_add(sys.argv[2], sys.argv[3], sys.argv[4])
+    if action == "device_del":
+        if len(sys.argv) < 3:
+            print("device_del <label>")
+            return 1
+        return device_del(sys.argv[2])
+    if action == "device_set":
+        if len(sys.argv) < 5:
+            print("device_set <label> <ip> <pref>")
+            return 1
+        return device_set(sys.argv[2], sys.argv[3], sys.argv[4])
+    print("unknown action")
+    return 1
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())
