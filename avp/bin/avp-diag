@@ -1,0 +1,330 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-DIAG
+# File      : avp-diag
+# Role      : Diagnostics (read-only)
+# Version   : v2.0.0 (2026-02-20)
+# Status    : stable
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import time
+import subprocess
+import json
+import re
+from pathlib import Path
+from typing import List, Tuple, Optional
+
+# Canonical directories and defaults
+CANON_BASE = "/jffs/scripts/avp"
+POLICY_DIR = "/jffs/scripts/autovpn/policy"
+DEVICES_CONF = f"{POLICY_DIR}/devices.conf"
+AVP_LOGDIR = os.environ.get("AVP_LOGDIR", "/tmp/avp_logs")
+PRIMARY_LOGDIR = AVP_LOGDIR
+PRIMARY_STATEDIR = "/jffs/scripts/avp/state"
+
+# Defaults (safe)
+WGS = ["wgc1", "wgc2", "wgc3", "wgc4", "wgc5"]
+TARGETS = ["1.1.1.1", "8.8.8.8"]
+DNS_TARGETS = ["one.one.one.one", "dns.google"]
+PINGCOUNT = 2
+PINGW = 2
+HANDSHAKE_MAX_AGE = 180
+
+def ts() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+def exists(cmd: str) -> bool:
+    return subprocess.call(["which", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+def load_devices_from_conf() -> List[Tuple[str, str, str]]:
+    devices: List[Tuple[str, str, str]] = []
+    if not os.path.isfile(DEVICES_CONF):
+        return devices
+    try:
+        with open(DEVICES_CONF, "r") as f:
+            for raw in f:
+                line = raw.rstrip("\n").rstrip("\r")
+                line = re.sub(r"[\s]*$", "", line)
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                L, I, P = parts[:3]
+                devices.append((L, I, P))
+    except Exception:
+        return []
+    return devices
+
+def require_devices_conf() -> bool:
+    devices = load_devices_from_conf()
+    if not devices:
+        print(f"ERR: devices.conf obrigatório ausente/vazio/inválido: {DEVICES_CONF}")
+        return False
+    return True
+
+def iface_up(iface: str) -> bool:
+    try:
+        result = subprocess.run(["ip", "link", "show", iface], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        return "UP" in result.stdout
+    except Exception:
+        return False
+
+def wan_ping_ok() -> int:
+    ok = 0
+    for t in TARGETS:
+        try:
+            result = subprocess.run(["ping", "-c", str(PINGCOUNT), "-W", str(PINGW), t], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                ok += 1
+        except Exception:
+            pass
+    return ok
+
+def dns_check() -> str:
+    if not exists("nslookup"):
+        return "SKIP"
+    ok = 0
+    for d in DNS_TARGETS:
+        try:
+            result = subprocess.run(["nslookup", d], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                ok += 1
+        except Exception:
+            pass
+    return "OK" if ok >= 1 else "FAIL"
+
+def wg_handshake_age(iface: str) -> Tuple[int, Optional[int]]:
+    if not exists("wg"):
+        return 2, None  # wg missing
+    try:
+        now = int(time.time())
+        proc = subprocess.run(["wg", "show", iface, "latest-handshakes"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        lines = proc.stdout.strip().split("\n")
+        timestamps: List[int] = []
+        for line in lines:
+            parts = line.split()
+            if len(parts) >= 2:
+            #   print(part[1])  (converted to python)
+                try:
+                    ts_val = int(parts[1])
+                    if ts_val > 0:
+                        timestamps.append(ts_val)
+                except ValueError:
+                    pass
+        if not timestamps:
+            return 3, None  # unknown (no peers or handshake 0)
+        last_hs = max(timestamps)
+        age = now - last_hs
+        return 0, age
+    except Exception:
+        return 3, None
+
+def score_iface(iface: str) -> Tuple[str, str, str, str]:
+    if iface_up(iface):
+        rc, age = wg_handshake_age(iface)
+        if rc == 0 and age is not None:
+            return iface, "UP", str(age), str(age)
+        else:
+            return iface, "UP", "UNKNOWN", "9999"
+    else:
+        return iface, "DOWN", "UNKNOWN", "99999"
+
+def sorted_ifaces_by_score() -> List[Tuple[str, str, str, str]]:
+    scores = [score_iface(i) for i in WGS]
+    def keyfunc(item: Tuple[str, str, str, str]):
+        try:
+            return int(item[3])
+        except ValueError:
+            return 99999
+    return sorted(scores, key=keyfunc)
+
+def best_iface_by_score() -> Tuple[str, str, str, str]:
+    sorted_list = sorted_ifaces_by_score()
+    return sorted_list[0] if sorted_list else ("", "UNKNOWN", "UNKNOWN", "99999")
+
+def pick_latest_log(pattern: str = "avp_.*\\.log") -> str:
+    pattern_re = re.compile(pattern)
+    # search primary first
+    if os.path.isdir(PRIMARY_LOGDIR):
+        try:
+            files = sorted([f for f in os.listdir(PRIMARY_LOGDIR) if pattern_re.match(f)])
+            if files:
+                return f"{PRIMARY_LOGDIR}/{files[-1]}"
+        except Exception:
+            pass
+    # fallbacks
+    for d in ["/jffs/scripts/autovpn/logs", "/jffs/scripts/autovpn/policy/logs", "/tmp"]:
+        if os.path.isdir(d):
+            try:
+                files = sorted([f for f in os.listdir(d) if pattern_re.match(f)])
+                if files:
+                    return f"{d}/{files[-1]}"
+            except Exception:
+                pass
+    return ""
+
+def show_tldr() -> None:
+    wan_ok = wan_ping_ok()
+    dns = dns_check()
+    b_if, b_st, b_age, b_score = best_iface_by_score()
+    print("TL;DR:")
+    print(f"  WAN: {'OK (' + str(wan_ok) + '/' + str(len(TARGETS)) + ')' if wan_ok >= 1 else 'FAIL (' + str(wan_ok) + '/' + str(len(TARGETS)) + ')'}")
+    if dns == "OK":
+        print("  DNS: OK")
+    elif dns == "FAIL":
+        print("  DNS: FAIL")
+    elif dns == "SKIP":
+        print("  DNS: SKIP (nslookup_missing)")
+    else:
+        print("  DNS: UNKNOWN")
+    print(f"  WG: best={b_if} st={b_st} age={b_age} score={b_score}")
+
+def show_raw() -> None:
+    print("RAW:")
+    print(f"  time: {ts()}")
+    print(f"  wan targets: {' '.join(TARGETS)}")
+    for t in TARGETS:
+        try:
+            result = subprocess.run(["ping", "-c", str(PINGCOUNT), "-W", str(PINGW), t], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                print(f"  ping {t}: OK")
+            else:
+                print(f"  ping {t}: FAIL")
+        except Exception:
+            print(f"  ping {t}: FAIL")
+    print(f"  dns targets: {' '.join(DNS_TARGETS)}")
+    if exists("nslookup"):
+        for d in DNS_TARGETS:
+            try:
+                result = subprocess.run(["nslookup", d], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"  nslookup {d}: {'OK' if result.returncode == 0 else 'FAIL'}")
+            except Exception:
+                print(f"  nslookup {d}: FAIL")
+    else:
+        print("  nslookup: missing (skip dns checks)")
+    print(f"  wg ifaces: {' '.join(WGS)}")
+    for iface in WGS:
+        if iface_up(iface):
+            rc, age = wg_handshake_age(iface)
+            if rc == 0 and age is not None:
+                print(f"  {iface}: UP handshake_age={age}s")
+            elif rc == 2:
+                print(f"  {iface}: UP handshake_age=? (wg_missing)")
+            elif rc == 3:
+                print(f"  {iface}: UP handshake_age=? (no_handshake)")
+            else:
+                print(f"  {iface}: UP handshake_age=? (unknown)")
+        else:
+            print(f"  {iface}: DOWN")
+
+def show_synth() -> None:
+    print("SYNTH:")
+    for iface, st, age, score in sorted_ifaces_by_score():
+        note = ""
+        try:
+            if st == "UP" and age != "UNKNOWN" and int(age) > HANDSHAKE_MAX_AGE:
+                note = "DEGRADED"
+        except Exception:
+            pass
+        print(f"  {iface:<4}  {st:<4}  age={age:<6}  score={score:<5}  {note}")
+
+def show_logs() -> None:
+    print("LOGS:")
+    f = pick_latest_log("avp_.*\\.log")
+    if not f:
+        print("  latest: (none)")
+        return
+    print(f"  latest: {f}")
+    try:
+        with open(f, "r", errors="ignore") as fp:
+            lines = fp.readlines()
+        patt = re.compile(r'^(\[[A-Z-]+\]|\d{4}-\d{2}-\d{2} ).*(STATUS|SUMMARY|ACTION|ERR|WARN|TL;DR|DONE)')
+        filtered = [ln for ln in lines if patt.search(ln)]
+        tail_lines = filtered[-25:]
+        for ln in tail_lines:
+            print(ln.rstrip("\n"))
+    except Exception:
+        pass
+
+def show_cur() -> None:
+    if not require_devices_conf():
+        return
+    devices = load_devices_from_conf()
+    try:
+        result = subprocess.run(["ip", "rule", "show"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        rules = result.stdout.split("\n") if result.returncode == 0 else []
+    except Exception:
+        rules = []
+    for L, I, P in devices:
+        if not L:
+            continue
+        print(f"CUR: {L} ({I}, pref={P})")
+        matched = False
+        for line in rules:
+            if f"pref {P}" in line or f"from {I}" in line:
+                print(f"  {line.strip()}")
+                matched = True
+        if not matched:
+            print("  rule: (none)")
+
+def sep() -> None:
+    print("------------------------------------------------------------")
+
+def run_all() -> None:
+    sep(); show_tldr(); sep(); show_raw(); sep(); show_synth(); sep(); show_logs(); sep(); show_cur(); print("")
+
+def usage() -> None:
+    print("Usage: avp-diag [--raw] [--synth] [--logs] [--cur] [--tldr] [--all] [--live]")
+    print("\n  --raw    : checks raw (ping/dns/wg)")
+    print("  --synth  : score/ordering summary for wg ifaces")
+    print("  --logs   : tail status-ish lines from latest AVP logs")
+    print("  --cur    : show ip rule/route tables for known devices (read-only)")
+    print("  --tldr   : short summary")
+    print("  --all    : raw + synth + logs + cur + tldr")
+    print("  --live   : repeat --all every 5s (Ctrl+C to stop)")
+
+def main(argv: List[str]) -> int:
+    if not argv:
+        usage()
+        return 1
+    DO_RAW = DO_SYNTH = DO_LOGS = DO_CUR = DO_TLDR = DO_ALL = DO_LIVE = 0
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--raw": DO_RAW = 1
+        elif arg == "--synth": DO_SYNTH = 1
+        elif arg == "--logs": DO_LOGS = 1
+        elif arg == "--cur": DO_CUR = 1
+        elif arg == "--tldr": DO_TLDR = 1
+        elif arg == "--all": DO_ALL = 1
+        elif arg == "--live": DO_LIVE = 1
+        elif arg in ("-h", "--help"): usage(); return 0
+        else:
+            usage(); return 1
+        i += 1
+    if DO_ALL:
+        if DO_LIVE:
+            n = 0
+            while True:
+                n += 1
+                print(f"{ts()} [DIAG] cycle={n} (every 5s)  script=AVP-DIAG {SCRIPT_VER}")
+                run_all()
+                time.sleep(5)
+        else:
+            run_all()
+        return 0
+    if DO_TLDR: sep(); show_tldr()
+    if DO_RAW: sep(); show_raw()
+    if DO_SYNTH: sep(); show_synth()
+    if DO_LOGS: sep(); show_logs()
+    if DO_CUR: sep(); show_cur()
+    print("")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
