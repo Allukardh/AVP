@@ -1,0 +1,47 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-ENG
+# File      : avp-eng
+# Role      : Multi-Device VPN Failover (Engine) - Python wrapper
+# Version   : v2.0.0 (2026-02-20)
+# Status    : transitional
+# =============================================================
+SCRIPT_VER = "v2.0.0"
+
+import os
+import sys
+import subprocess
+
+# Path to the legacy shell engine; override via AVP_ENG_SH if needed
+SHELL_SCRIPT = os.environ.get("AVP_ENG_SH", "/jffs/scripts/avp-eng.sh")
+
+def usage() -> None:
+    print(
+        "Usage: avp-eng <command> [options]\\n"
+        "This is a transitional Python wrapper around the legacy shell engine.\\n"
+        "All arguments are passed through to avp-eng.sh.\\n"
+    )
+
+def main(argv: list) -> int:
+    if not os.path.isfile(SHELL_SCRIPT) or not os.access(SHELL_SCRIPT, os.X_OK):
+        sys.stderr.write(f"Error: legacy engine {SHELL_SCRIPT} not found or not executable\\n")
+        return 127
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        try:
+            subprocess.run([SHELL_SCRIPT, "--help"], check=False)
+        except Exception:
+            usage()
+        return 0
+    cmd = [SHELL_SCRIPT] + argv
+    try:
+        proc = subprocess.run(cmd)
+        return proc.returncode
+    except KeyboardInterrupt:
+        return 130
+    except Exception as e:
+        sys.stderr.write(f"Execution failed: {e}\\n")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
