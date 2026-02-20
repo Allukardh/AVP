@@ -38,7 +38,7 @@ Options:
   --root PATH   repo root (default: /jffs/scripts)
 Safety:
   - --apply requires git repo and removes ONLY untracked files.
-  - Never touches: .git/, backups/, autovpn/, avp/state/, avp/cache/, avp/logs/
+  - Never touches: .git/, backups/, avp/policy/, avp/state/, avp/cache/, avp/logs/
 USAGE
       exit 0 ;;
     *) die "unknown arg: $1" ;;
@@ -48,7 +48,7 @@ done
 
 [ -d "$ROOT" ] || die "root not found: $ROOT"
 
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 export GIT_PAGER=cat PAGER=cat
 hash -r 2>/dev/null || true
 
@@ -67,7 +67,6 @@ fi
 find "$ROOT" -type f \
   -not -path "$ROOT/.git/*" \
   -not -path "$ROOT/backups/*" \
-  -not -path "$ROOT/autovpn/*" \
   -not -path "$ROOT/avp/state/*" \
   -not -path "$ROOT/avp/cache/*" \
   -not -path "$ROOT/avp/logs/*" \

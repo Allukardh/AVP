@@ -29,8 +29,8 @@
 #   * FIX: evitar clobber do SCRIPT_VER pelo avp-lib (SELF_VER + restore) e logar versão correta
 # - v1.0.15 (2026-02-10)
 #   * FIX: START log volta a incluir pid=$$ (wrapper visível no cron)
-#   * HARDEN: guard se /jffs/scripts/avp-pol.sh ausente (rc=127 + log)
-#   * HARDEN: emit_error fallback para /tmp se /jffs/scripts/logs nao gravavel
+#   * HARDEN: guard se /jffs/scripts/avp/bin/avp-pol.sh ausente (rc=127 + log)
+#   * HARDEN: emit_error fallback para /tmp se /jffs/scripts/avp/logs nao gravavel
 # - v1.0.14 (2026-02-09)
 #   * FIX: emit_error usa log_error (avp-lib); remove JSON manual em avp_errors.log
 # - v1.0.13 (2026-01-27)
@@ -44,7 +44,7 @@
 # - v1.0.9 (2026-01-10)
 #   * ADD: erro estruturado no avp_errors.log quando rc!=0 (cron)
 # - v1.0.8 (2026-01-08)
-#   * CHG: Flash-Safe v1: erro de execucao logado em /jffs/scripts/logs/avp_errors.log
+#   * CHG: Flash-Safe v1: erro de execucao logado em /jffs/scripts/avp/logs/avp_errors.log
 # - v1.0.7 (2026-01-08)
 #   * CHG: LOGDIR padrão agora /tmp/avp_logs (opt AVP_LOGDIR) para evitar escrita no jffs
 # - v1.0.6 (2026-01-07)
@@ -70,10 +70,10 @@ SCRIPT_VER="v1.0.22"
 set -u
 
 SELF_VER="$SCRIPT_VER"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 
-AVP_LIB="/jffs/scripts/avp-lib.sh"
+AVP_LIB="/jffs/scripts/avp/lib/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
 type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
 has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
@@ -87,7 +87,7 @@ emit_error(){
   fi
 
   _tsn="$(date +%s)"
-  _errd="/jffs/scripts/logs"
+  _errd="/jffs/scripts/avp/logs"
   _errf="$_errd/avp_errors.log"
   [ -d "$_errd" ] || mkdir -p "$_errd" 2>/dev/null || :
   _line="{\"ts\":\"$_tsn\",\"comp\":\"AVP-POL-CRON\",\"msg\":\"$_msg\",\"rc\":$_rc}"
@@ -113,7 +113,7 @@ mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2
 LOG="$LOGDIR/avp-pol-cron.log"
 rotate_if_big "$LOG"
 echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER START pid=$$" >>"$LOG"
-POL="/jffs/scripts/avp-pol.sh"
+POL="/jffs/scripts/avp/bin/avp-pol.sh"
 if [ ! -f "$POL" ]; then
   echo "$(ts) [CRON] AVP-POL-CRON $SELF_VER ERR missing $POL" >>"$LOG"
   rc=127
@@ -134,9 +134,9 @@ if [ "$rc" -ne 0 ]; then
 
   {
     echo "$(ts) [CRON] failure_dump BEGIN rc=$rc"
-    /bin/sh /jffs/scripts/avp-pol.sh status
+    /bin/sh /jffs/scripts/avp/bin/avp-pol.sh status
     echo "---- LAST LOG (head 80) ----"
-    /bin/sh /jffs/scripts/avp-pol.sh run --show-last | head -n 80
+    /bin/sh /jffs/scripts/avp/bin/avp-pol.sh run --show-last | head -n 80
     echo "$(ts) [CRON] failure_dump END rc=$rc"
   } >>"$LOG" 2>&1
 fi

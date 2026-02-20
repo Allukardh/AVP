@@ -34,7 +34,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.10"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -43,7 +43,7 @@ avp_epoch() { date +%s; }
 
 has_fn(){ type "$1" >/dev/null 2>&1; }
 # Layout (Flash-Safe v1)
-AVP_FLASH_LOGDIR="${AVP_FLASH_LOGDIR:-/jffs/scripts/logs}"          # Classe A (flash)
+AVP_FLASH_LOGDIR="${AVP_FLASH_LOGDIR:-/jffs/scripts/avp/logs}"          # Classe A (flash)
 AVP_TMP_LOGDIR="${AVP_LOGDIR:-${AVP_TMP_LOGDIR:-/tmp/avp_logs}}"    # Classe B (tmpfs)
 AVP_STATEDIR="${AVP_STATEDIR:-/jffs/scripts/avp/state}"             # Classe C (flash, rate-limited)
 

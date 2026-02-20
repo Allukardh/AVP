@@ -15,7 +15,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.0"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -470,17 +470,17 @@ J
 usage(){
 cat <<'U'
 Usage:
-  ./avp-meta.sh --help
-  ./avp-meta.sh --print-spec-template
+  avp-meta.sh --help
+  avp-meta.sh --print-spec-template
 
   # Apenas verificar (sem escrever):
-  ./avp-meta.sh --check --targets <file> [<file>...]
+  avp-meta.sh --check --targets <file> [<file>...]
 
   # Normalizar (sem bump):
-  ./avp-meta.sh --normalize --targets <file> [<file>...]
+  avp-meta.sh --normalize --targets <file> [<file>...]
 
   # Aplicar bump + changelog via spec JSON (jq obrigatório):
-  ./avp-meta.sh --apply --spec /caminho/spec.json
+  avp-meta.sh --apply --spec /caminho/spec.json
 
 Notas:
 - O "bloco canônico" segue o padrão do avp-diag.sh (header + changelog + SCRIPT_VER).

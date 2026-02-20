@@ -125,7 +125,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.4.15"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -704,10 +704,10 @@ gate_pol_json() {
   echo " $TARGETS " | grep -q " avp-pol.sh " || return 0
 
   for cmd in \
-    "./avp-pol.sh status --json" \
-    "./avp-pol.sh snapshot" \
-    "./avp-pol.sh profile list" \
-    "./avp-pol.sh device list"
+    "/jffs/scripts/avp/bin/avp-pol.sh status --json" \
+    "/jffs/scripts/avp/bin/avp-pol.sh snapshot" \
+    "/jffs/scripts/avp/bin/avp-pol.sh profile list" \
+    "/jffs/scripts/avp/bin/avp-pol.sh device list"
   do
     _l="$(sh -c "$cmd" 2>/dev/null | tail -n 1)"
     json_parse_gate "$_l" || return 1
@@ -722,14 +722,14 @@ gate_action_json_basic() {
   fi
   echo " $TARGETS " | grep -q " avp-action.sh " || return 0
 
-  _l="$(./avp-action.sh action=token_get 2>/dev/null | tail -n 1)"
+  _l="$(/jffs/scripts/avp/bin/avp-action.sh action=token_get 2>/dev/null | tail -n 1)"
   json_parse_gate "$_l" || return 1
 
   if have_jq; then
     _tok="$(printf '%s\n' "$_l" | jq_cmd -r '.data.token // empty' 2>/dev/null || true)"
     [ -n "$_tok" ] || return 2
 
-    _s="$(./avp-action.sh action=status token="$_tok" 2>/dev/null | tail -n 1)"
+    _s="$(/jffs/scripts/avp/bin/avp-action.sh action=status token="$_tok" 2>/dev/null | tail -n 1)"
     json_parse_gate "$_s" || return 3
     printf '%s\n' "$_s" | jq_cmd -e '.data.enabled? and .data.profile?' >/dev/null 2>&1 || return 4
   else
@@ -992,7 +992,7 @@ case "$MODE" in
 
   --help|-h)
     cat <<EOF
-Usage: ./avp-smoke.sh [--pre|--post|--hotfix|--patch-check|--help] [targets...]
+Usage: avp-smoke.sh [--pre|--post|--hotfix|--patch-check|--help] [targets...]
 
 --pre         : antes de qualquer mudança (exige baseline limpo tracked + patch-check opcional + sintaxe + probes best-effort + ASP gate)
 --post        : depois da mudança (antes do commit) (diff --check + patch-check opcional + sintaxe + probes best-effort + ASP gate)
@@ -1002,8 +1002,8 @@ Usage: ./avp-smoke.sh [--pre|--post|--hotfix|--patch-check|--help] [targets...]
 --patch-check : valida patch em arquivo com git apply --check (não aplica)
 
 Targets (opcional): se informado, roda gates apenas nos arquivos indicados.
-  Ex.: ./avp-smoke.sh --post avp-pol.sh services-start
-  Ex.: ./avp-smoke.sh --post avp/www/avp.asp
+  Ex.: avp-smoke.sh --post avp-pol.sh services-start
+  Ex.: avp-smoke.sh --post avp/www/avp.asp
 
 Envs úteis:
   AVP_SMOKE_ROOT=/jffs/scripts     root do repo (útil fora do router / snapshot/tar)

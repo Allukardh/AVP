@@ -41,11 +41,11 @@
 #   * NOTE  : somente higiene operacional; sem mudar fluxo/contrato.
 # - v1.3.9 (2026-01-10)
 #   * ADD: status inclui observabilidade de degradado
-#     (janela temporal via /jffs/scripts/logs/avp_errors.log; sem escrita extra no flash)
+#     (janela temporal via /jffs/scripts/avp/logs/avp_errors.log; sem escrita extra no flash)
 # - v1.3.8 (2026-01-10)
 #   * CHG: enable/disable agora retornam JSON canônico; --kv mantém fallback humano/legado
 # - v1.3.7 (2026-01-08)
-#   * CHG: Flash-Safe v1: eventos/erros em /jffs/scripts/logs; verbose segue em /tmp/avp_logs
+#   * CHG: Flash-Safe v1: eventos/erros em /jffs/scripts/avp/logs; verbose segue em /tmp/avp_logs
 #   * CHG: remove arquivo dedicado avp_gui_actions.log (vira EVENT em avp_events.log)
 # - v1.3.6 (2026-01-08)
 #   * CHG: help/refs alinhados: logs padrao em /tmp/avp_logs (opt AVP_LOGDIR)
@@ -126,14 +126,14 @@
 # =============================================================
 
 SCRIPT_VER="v1.3.22"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
-ENGINE="/jffs/scripts/avp-eng.sh"
-BACKUP_UTIL="/jffs/scripts/avp-backup.sh"
+ENGINE="/jffs/scripts/avp/bin/avp-eng.sh"
+BACKUP_UTIL="/jffs/scripts/avp/bin/avp-backup.sh"
 
-POLICY_DIR="/jffs/scripts/autovpn/policy"
+POLICY_DIR="/jffs/scripts/avp/policy"
 GLOBAL_CONF="$POLICY_DIR/global.conf"
 PROFILES_CONF="$POLICY_DIR/profiles.conf"
 DEVICES_CONF="$POLICY_DIR/devices.conf"
@@ -142,7 +142,7 @@ DEVICES_CONF="$POLICY_DIR/devices.conf"
 AVP_STATE_DIR="/jffs/scripts/avp/state"
 AVP_GUI_APPLY_STATE="$AVP_STATE_DIR/avp_gui_apply.state"
 AVP_LOGDIR="${AVP_LOGDIR:-/tmp/avp_logs}"
-AVP_LIB="/jffs/scripts/avp-lib.sh"
+AVP_LIB="/jffs/scripts/avp/lib/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
 type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
 has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
@@ -637,7 +637,7 @@ _deg_window_summary() {
   # Output: DEG|CNT|LAST_TS|SINCE|COMP|MSG|RC|WIN
   _now="$(date +%s 2>/dev/null || echo 0)"
   _win="${AVP_DEG_WINDOW_SEC:-600}"
-  _f="/jffs/scripts/logs/avp_errors.log"
+  _f="/jffs/scripts/avp/logs/avp_errors.log"
 
   _cnt=0
   _last_ts=""

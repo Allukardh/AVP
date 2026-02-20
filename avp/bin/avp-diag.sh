@@ -29,7 +29,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.2.5"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -40,7 +40,7 @@ exists() { command -v "$1" >/dev/null 2>&1; }
 CANON_BASE="/jffs/scripts/avp"
 
 # Policy inventory (single source of truth)
-POLICY_DIR="/jffs/scripts/autovpn/policy"
+POLICY_DIR="/jffs/scripts/avp/policy"
 DEVICES_CONF="$POLICY_DIR/devices.conf"
 DEVICES_LIST=""
 
@@ -80,7 +80,7 @@ HANDSHAKE_MAX_AGE=180
 
 usage() {
   cat <<'U'
-Usage: ./avp-diag.sh [--raw] [--synth] [--logs] [--cur] [--tldr] [--all] [--live]
+Usage: avp-diag.sh [--raw] [--synth] [--logs] [--cur] [--tldr] [--all] [--live]
 
   --raw    : checks raw (ping/dns/wg)
   --synth  : score/ordering summary for wg ifaces
@@ -194,7 +194,7 @@ pick_latest_log() {
   fi
 
   # fallback (legacy/other)
-  for d in /jffs/scripts/autovpn/logs /jffs/scripts/autovpn/policy/logs /tmp; do
+  for d in /jffs/scripts/avp/logs /jffs/scripts/avp/policy/logs /tmp; do
     [ -d "$d" ] || continue
     f="$(ls -1 "$d" 2>/dev/null | grep -E "$pat" | sort | tail -n 1)"
     [ -n "$f" ] && { echo "$d/$f"; return 0; }

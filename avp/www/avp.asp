@@ -671,7 +671,7 @@ async function doAction(action, extra){
 
   if ($("btnKv")){
     $("btnKv").addEventListener("click", function(){
-      const cmd = "./avp-cli.sh status --kv";
+      const cmd = "/jffs/scripts/avp/bin/avp-cli.sh status --kv";
       copyToClipboard(cmd).then(()=>alert("Command copied:\n" + cmd));
     });
   }

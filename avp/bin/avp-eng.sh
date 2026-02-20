@@ -74,7 +74,7 @@
 #   * CHG: TARGETS primario->fallback real (8.8.8.8 -> 1.1.1.1); INF somente se ambos falharem (loss!=0)
 #   * ADD: E1: summary JSON por ciclo (ultimo ciclo) em /tmp para consumo da WebUI
 # - v1.2.14 (2026-01-08)
-#   * CHG: Flash-Safe v1: em falha (rc!=0) grava ERROR em /jffs/scripts/logs/avp_errors.log
+#   * CHG: Flash-Safe v1: em falha (rc!=0) grava ERROR em /jffs/scripts/avp/logs/avp_errors.log
 # - v1.2.13 (2026-01-08)
 #   * CHG: eng logs default /tmp/avp_logs (opt AVP_LOGDIR)
 # - v1.2.12 (2026-01-07)
@@ -155,7 +155,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.2.40"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -175,7 +175,7 @@ harden_state_dir() {
 CANON_BASE="/jffs/scripts/avp"
 
 AVP_LOGDIR="${AVP_LOGDIR:-/tmp/avp_logs}"
-AVP_LIB="/jffs/scripts/avp-lib.sh"
+AVP_LIB="/jffs/scripts/avp/lib/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
 type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
 has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :
@@ -192,7 +192,7 @@ mkdir -p "$STATEDIR" "$CACHEDIR" 2>/dev/null || :
 mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2>/dev/null || :; }
 
 # Policy integration (devices inventory)
-DEVICES_CONF="/jffs/scripts/autovpn/policy/devices.conf"
+DEVICES_CONF="/jffs/scripts/avp/policy/devices.conf"
 
 # (RULE_PREF e STATE_FILE são selecionados por device em runtime)
 RULE_PREF=""
@@ -1213,7 +1213,7 @@ Usage:
 
 Notas importantes:
   - Por padrao, o ENG NAO deve ser executado sozinho.
-    Ele foi projetado para rodar via POL (./avp-pol.sh run / run --live),
+    Ele foi projetado para rodar via POL (avp-pol.sh run / run --live),
     pois o POL aplica policy/profile antes de chamar o ENG.
 
   - Live real:
@@ -1225,7 +1225,7 @@ Notas importantes:
       PINGW=1
 
   - Diagnostico:
-      Use o POL em modo live (./avp-pol.sh run --live) ou o DIAG.
+      Use o POL em modo live (avp-pol.sh run --live) ou o DIAG.
 EOF
 }
 
@@ -1242,7 +1242,7 @@ esac
 
   # ENG deve rodar via POL (policy/profile). Standalone é bloqueado por padrão.
   if [ "${AVP_CALLER:-}" != "POL" ] && [ "${AVP_ALLOW_STANDALONE:-0}" != "1" ] && [ "${1:-}" != "--standalone" ]; then
-    echo "$(ts) [ERR] engine_standalone_blocked (use POL: ./avp-pol.sh run --live | ou DIAG)"
+    echo "$(ts) [ERR] engine_standalone_blocked (use POL: avp-pol.sh run --live | ou DIAG)"
     echo "$(ts) [NEXT] override: AVP_ALLOW_STANDALONE=1 ou --standalone"
     exit 64
   fi

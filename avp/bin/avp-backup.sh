@@ -30,11 +30,11 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.7"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
-BACKUP_DIR="/jffs/scripts/backups"
+BACKUP_DIR="/jffs/scripts/avp/backups"
 
 mkdir -p "$BACKUP_DIR"
 
@@ -76,9 +76,12 @@ backup_file() {
 # Lista canonica (inclui self-backup)
 backup_file "/jffs/scripts/services-start"
 backup_file "/jffs/scripts/post-mount"
-backup_file "/jffs/scripts/avp-eng.sh"
-backup_file "/jffs/scripts/avp-pol.sh"
-backup_file "/jffs/scripts/avp-diag.sh"
-backup_file "/jffs/scripts/avp-backup.sh"
+backup_file "/jffs/scripts/avp/bin/avp-eng.sh"
+backup_file "/jffs/scripts/avp/bin/avp-pol.sh"
+backup_file "/jffs/scripts/avp/bin/avp-diag.sh"
+backup_file "/jffs/scripts/avp/bin/avp-cli.sh"
+backup_file "/jffs/scripts/avp/bin/avp-webui.sh"
+backup_file "/jffs/scripts/avp/bin/avp-webui-feed.sh"
+backup_file "/jffs/scripts/avp/bin/avp-backup.sh"
 
 exit 0

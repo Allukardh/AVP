@@ -61,7 +61,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.20"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -276,7 +276,7 @@ main() {
 
   require_token "$token" || exit $?
 
-  POL="/jffs/scripts/avp-pol.sh"
+  POL="/jffs/scripts/avp/bin/avp-pol.sh"
   [ -x "$POL" ] || { err 10 "dispatch" "avp-pol.sh not found" '{}'; exit 10; }
 
   case "$action" in

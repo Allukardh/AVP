@@ -35,7 +35,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.11"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -49,8 +49,8 @@ JSON_DST="/www/user/avp-status.json"
 
 # canonical components
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
-CLI="/jffs/scripts/avp-cli.sh"
-FEED="/jffs/scripts/avp-webui-feed.sh"
+CLI="/jffs/scripts/avp/bin/avp-cli.sh"
+FEED="/jffs/scripts/avp/bin/avp-webui-feed.sh"
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 log() { echo "$(ts) [AVP-WEBUI] $*"; }

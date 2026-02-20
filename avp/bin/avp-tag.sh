@@ -31,7 +31,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.6"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -42,8 +42,8 @@ usage(){
 avp-tag.sh — Tagger oficial do repo AVP
 
 Uso:
-  ./avp-tag.sh [--publish|--no-publish] rel vX.Y.Z "mensagem" [ref]
-  ./avp-tag.sh [--publish|--no-publish] ck  slug_YYYYMMDD "mensagem" [ref]
+  avp-tag.sh [--publish|--no-publish] rel vX.Y.Z "mensagem" [ref]
+  avp-tag.sh [--publish|--no-publish] ck  slug_YYYYMMDD "mensagem" [ref]
 
 Regras:
   - rel: vX.Y.Z

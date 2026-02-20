@@ -26,7 +26,7 @@ usage(){
 Usage:
   avp-hygiene-scan.sh <file>
 Examples:
-  ./avp-hygiene-scan.sh avp-lib.sh
+  avp-hygiene-scan.sh avp-lib.sh
 Notes:
   - Report only (does NOT modify files)
   - Shows line numbers and short snippets

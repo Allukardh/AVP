@@ -19,7 +19,7 @@
 # - v1.2.13 (2026-01-18)
 #   * POLISH: padroniza SCRIPT_VER + set -u (ordem oficial) e remove linhas em branco desnecessarias
 # - v1.2.12 (2026-01-08)
-#   * CHG: Flash-Safe v1: EVENT (start/stop) em /jffs/scripts/logs; warn/state seguem em /tmp/avp_logs
+#   * CHG: Flash-Safe v1: EVENT (start/stop) em /jffs/scripts/avp/logs; warn/state seguem em /tmp/avp_logs
 # - v1.2.11 (2026-01-08)
 #   * CHG: LOGDIR padrao agora /tmp/avp_logs (opt AVP_LOGDIR) para evitar escrita no jffs
 # - v1.2.10 (2026-01-05)
@@ -38,11 +38,11 @@
 # =============================================================
 
 SCRIPT_VER="v1.2.16"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
-CLI="/jffs/scripts/avp-cli.sh"
+CLI="/jffs/scripts/avp/bin/avp-cli.sh"
 OUT="/jffs/scripts/avp/www/avp-status.json"
 
 PID="/tmp/avp_webui_feed.pid"
@@ -50,7 +50,7 @@ LOCK="/tmp/avp_webui_feed.lock"   # lockdir atômico (mkdir)
 
 # logs (preferência: jffs; fallback: tmp)
 AVP_LOGDIR="${AVP_LOGDIR:-/tmp/avp_logs}"
-AVP_LIB="/jffs/scripts/avp-lib.sh"
+AVP_LIB="/jffs/scripts/avp/lib/avp-lib.sh"
 [ -f "$AVP_LIB" ] && . "$AVP_LIB"
 type has_fn >/dev/null 2>&1 || has_fn(){ type "$1" >/dev/null 2>&1; }
 has_fn avp_init_layout && avp_init_layout >/dev/null 2>&1 || :

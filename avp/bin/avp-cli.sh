@@ -46,7 +46,7 @@
 # - v1.0.3 (2026-01-17)
 #   * POLISH: split do obj JSON (anti-wrap) + indent consistente
 # - v1.0.2 (2026-01-04)
-#   * FIX: POLICY_DIR volta ao canônico do projeto (AVP_ROOT/autovpn/policy) mantendo STATE_DIR em (AVP_ROOT/avp/state)
+#   * FIX: POLICY_DIR volta ao canônico do projeto (AVP_ROOT/avp/policy) mantendo STATE_DIR em (AVP_ROOT/avp/state)
 # - v1.0.1 (2026-01-04)
 #   * ADD: erro estruturado no JSON (err:{level,code,where,hint}) mantendo errors[] para compatibilidade
 #   * ADD: purge leve de /tmp (/tmp/avp_cli_devices.*) para evitar sobras órfãs AVP-only
@@ -58,14 +58,14 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.18"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
 # Allow test harness / offline runs (default = Merlin real path)
 AVP_ROOT="${AVP_ROOT:-/jffs/scripts}"
 
-POLICY_DIR="${AVP_ROOT}/autovpn/policy"
+POLICY_DIR="${AVP_ROOT}/avp/policy"
 STATE_DIR="${AVP_ROOT}/avp/state"
 
 GLOBAL_CONF="$POLICY_DIR/global.conf"

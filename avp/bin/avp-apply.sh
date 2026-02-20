@@ -77,7 +77,7 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.26"
-export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
@@ -110,16 +110,16 @@ die()  { err "$*"; exit 1; }
 usage() {
   cat <<EOF2
 Usage:
-  ./avp-apply.sh <patchfile> [--fg] [--hotfix]
+  avp-apply.sh <patchfile> [--fg] [--hotfix]
 
 Behavior:
-  - Default: roda em BACKGROUND (nao depende da sessao SSH) e grava log em /jffs/scripts/logs/
+  - Default: roda em BACKGROUND (nao depende da sessao SSH) e grava log em /jffs/scripts/avp/logs/
   - --fg    : roda em foreground (bom p/ debug)
   - --hotfix: usa smoke --hotfix (bypass consciente do baseline limpo). So em urgencia.
 
 Env:
   AVP_APPLY_ROOT       : root do repo (default: /jffs/scripts)
-  AVP_APPLY_LOGDIR     : dir de logs (default: /jffs/scripts/logs)
+  AVP_APPLY_LOGDIR     : dir de logs (default: /jffs/scripts/avp/logs)
   AVP_APPLY_FIX_PERMS  : 1=normaliza perms apos apply (default: 1)
   AVP_APPLY_PERMS_SKIP : lista (espaco) de arquivos a pular (default: avp-lib.sh)
 EOF2
@@ -156,7 +156,7 @@ validate_patch_paths() {
 }
 
 ROOT="${AVP_APPLY_ROOT:-/jffs/scripts}"
-LOGDIR="${AVP_APPLY_LOGDIR:-/jffs/scripts/logs}"
+LOGDIR="${AVP_APPLY_LOGDIR:-/jffs/scripts/avp/logs}"
 
 FG=0
 HOTFIX=0
@@ -228,8 +228,8 @@ normalize_perms_after_apply() {
 run_apply() {
   cd "$ROOT" || exit 3
 
-  SMOKE="./avp-smoke.sh"
-  [ -x "$SMOKE" ] || die "smoke nao encontrado/executavel em $ROOT/avp-smoke.sh"
+  SMOKE="/jffs/scripts/avp/bin/avp-smoke.sh"
+  [ -x "$SMOKE" ] || die "smoke nao encontrado/executavel em /jffs/scripts/avp/bin/avp-smoke.sh"
 
   log "== AVP-APPLY start =="
   log "SCRIPT_VER=$SCRIPT_VER"
