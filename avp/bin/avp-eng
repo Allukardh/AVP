@@ -16,12 +16,17 @@ import subprocess
 import re
 import json
 from pathlib import Path
+import sys
+SELF = Path(__file__).resolve()
+REPO_ROOT = SELF.parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 from avp.lib.avp_lib import log_event, log_error, state_get, state_set, avp_epoch
 
 # Directories / constants
 CANON_BASE = "/jffs/scripts"
 STATE_DIR = f"{CANON_BASE}/avp/state"
-POLICY_DIR = f"{CANON_BASE}/autovpn/policy"
+POLICY_DIR = f"{CANON_BASE}/avp/policy"
 DEVICES_CONF = f"{POLICY_DIR}/devices.conf"
 WGS = ["wgc1","wgc2","wgc3","wgc4","wgc5"]
 PING_TARGETS = ["1.1.1.1","8.8.8.8"]

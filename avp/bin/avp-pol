@@ -14,13 +14,18 @@ import sys
 import json
 import subprocess
 import re
+from pathlib import Path
+SELF = Path(__file__).resolve()
+REPO_ROOT = SELF.parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 from avp.lib.avp_lib import log_event, log_error, state_get, state_set, state_write_file
 
 # Caminhos de configuração
 CANON_BASE = "/jffs/scripts"
-GLOBAL_CONF  = f"{CANON_BASE}/autovpn/policy/global.conf"
-PROFILES_CONF = f"{CANON_BASE}/autovpn/policy/profiles.conf"
-DEVICES_CONF  = f"{CANON_BASE}/autovpn/policy/devices.conf"
+GLOBAL_CONF  = f"{CANON_BASE}/avp/policy/global.conf"
+PROFILES_CONF = f"{CANON_BASE}/avp/policy/profiles.conf"
+DEVICES_CONF  = f"{CANON_BASE}/avp/policy/devices.conf"
 ENGINE = "/jffs/scripts/avp/bin/avp-eng"
 
 def read_conf(path):

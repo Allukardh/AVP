@@ -7,6 +7,7 @@
 # Version   : v2.0.0 (2026-02-20)
 # Status    : stable
 # =============================================================
+from __future__ import annotations
 SCRIPT_VER = "v2.0.0"
 
 """AutoVPN Platform (AVP) common library (Python port).
@@ -18,7 +19,6 @@ log_action para o policy.  Variáveis de ambiente permitem ajustar
 caminhos de logs e state; diretórios são criados sob demanda.
 """
 
-from __future__ import annotations
 
 import json
 import os

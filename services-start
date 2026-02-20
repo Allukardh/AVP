@@ -150,7 +150,7 @@ cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
   ln -sf /jffs/scripts/avp/www/avp-status.json /www/user/avp-status.json 2>/dev/null
 
   # sobe feeder (idempotente)
-  [ -x /jffs/scripts/avp/bin/avp-webui-feed ] && /jffs/scripts/avp/bin/avp-webui-feed.sh start >/dev/null 2>&1
+  [ -x /jffs/scripts/avp/bin/avp-webui-feed ] && /jffs/scripts/avp/bin/avp-webui-feed start >/dev/null 2>&1
 } &
 
 # ============================================================

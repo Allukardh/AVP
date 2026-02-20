@@ -174,8 +174,8 @@ def show_help(cli_name: str) -> str:
 def main(argv: List[str]) -> int:
     avp_root = os.environ.get('AVP_ROOT', '/jffs/scripts')
     cli_name = Path(__file__).name
-    global_conf = f"{avp_root}/autovpn/policy/global.conf"
-    devices_conf = f"{avp_root}/autovpn/policy/devices.conf"
+    global_conf = f"{avp_root}/avp/policy/global.conf"
+    devices_conf = f"{avp_root}/avp/policy/devices.conf"
     state_dir = f"{avp_root}/avp/state"
     if not argv:
         print(show_help(cli_name), end='')

@@ -217,7 +217,7 @@ def main(argv: list) -> int:
         return rc or 22
     pol = '/jffs/scripts/avp/bin/avp-pol'
     if not (os.path.isfile(pol) and os.access(pol, os.X_OK)):
-        err(10, 'dispatch', 'avp-pol.sh not found', '{}')
+        err(10, 'dispatch', 'avp-pol not found', '{}')
         return 10
     if action == 'enable':
         rc, _ = call_pol([pol, 'enable'])
