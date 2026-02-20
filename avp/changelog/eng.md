@@ -1,3 +1,6 @@
+## v2.1.0 (2026-02-20)
+* EXP: engine Python nativo — registra início e fim das ações via avp_lib e delega comandos ao avp-eng.sh.
+
 # eng
 
 ## v2.0.0 (2026-02-20)

@@ -3,45 +3,49 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-ENG
 # File      : avp-eng
-# Role      : Multi-Device VPN Failover (Engine) - Python wrapper
-# Version   : v2.0.0 (2026-02-20)
-# Status    : transitional
+# Role      : Multi-Device VPN Failover (Engine) — Python core
+# Version   : v2.1.0 (2026-02-20)
+# Status    : experimental
 # =============================================================
-SCRIPT_VER = "v2.0.0"
+SCRIPT_VER = "v2.1.0"
 
 import os
 import sys
 import subprocess
+from avp.lib.avp_lib import log_event, log_error
 
-# Path to the legacy shell engine; override via AVP_ENG_SH if needed
-SHELL_SCRIPT = os.environ.get("AVP_ENG_SH", "/jffs/scripts/avp-eng.sh")
+LEGACY_ENG = os.environ.get("AVP_ENG_SH", "/jffs/scripts/avp-eng.sh")
 
-def usage() -> None:
-    print(
-        "Usage: avp-eng <command> [options]\\n"
-        "This is a transitional Python wrapper around the legacy shell engine.\\n"
-        "All arguments are passed through to avp-eng.sh.\\n"
-    )
+def log_start(cmd: str) -> None:
+    log_event("ENG", f"start {cmd}")
 
-def main(argv: list) -> int:
-    if not os.path.isfile(SHELL_SCRIPT) or not os.access(SHELL_SCRIPT, os.X_OK):
-        sys.stderr.write(f"Error: legacy engine {SHELL_SCRIPT} not found or not executable\\n")
+def log_end(cmd: str, rc: int) -> None:
+    if rc == 0:
+        log_event("ENG", f"end {cmd} rc={rc}", rc=rc)
+    else:
+        log_error("ENG", f"end {cmd} rc={rc}", rc=rc)
+
+def call_legacy(args: list) -> int:
+    if not os.path.isfile(LEGACY_ENG) or not os.access(LEGACY_ENG, os.X_OK):
+        log_error("ENG", f"legacy engine not found: {LEGACY_ENG}", rc=127)
         return 127
-    if not argv or argv[0] in ("-h", "--help", "help"):
-        try:
-            subprocess.run([SHELL_SCRIPT, "--help"], check=False)
-        except Exception:
-            usage()
-        return 0
-    cmd = [SHELL_SCRIPT] + argv
     try:
-        proc = subprocess.run(cmd)
+        proc = subprocess.run([LEGACY_ENG] + args)
         return proc.returncode
     except KeyboardInterrupt:
         return 130
     except Exception as e:
-        sys.stderr.write(f"Execution failed: {e}\\n")
+        log_error("ENG", f"execution failed: {e}", rc=1)
         return 1
+
+def main(argv: list) -> int:
+    if not argv:
+        return call_legacy(["--help"])
+    cmd, subargs = argv[0], argv[1:]
+    log_start(cmd)
+    rc = call_legacy([cmd] + subargs)
+    log_end(cmd, rc)
+    return rc
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
