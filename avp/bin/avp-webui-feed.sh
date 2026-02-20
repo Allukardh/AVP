@@ -43,6 +43,14 @@ hash -r 2>/dev/null || true
 set -u
 
 CLI="/jffs/scripts/avp/bin/avp-cli.sh"
+# CLI fallback (tree reorg / wrappers)
+if [ ! -x "${CLI:-}" ]; then
+  if [ -x "/jffs/scripts/avp/bin/avp-cli.sh" ]; then
+    CLI="/jffs/scripts/avp/bin/avp-cli.sh"
+  elif [ -x "/jffs/scripts/avp/bin/avp-cli" ]; then
+    CLI="/jffs/scripts/avp/bin/avp-cli"
+  fi
+fi
 OUT="/jffs/scripts/avp/www/avp-status.json"
 
 PID="/tmp/avp_webui_feed.pid"

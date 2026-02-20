@@ -683,7 +683,7 @@ async function doAction(action, extra){
 
       const FEED_STATE = "/tmp/avp_logs/avp_webui_feed_state.log";
       const FEED_WARN  = "/tmp/avp_logs/avp_webui_warn.log";
-      const POL_LAST   = "/tmp/avp_logs/avp-pol-cron.log";
+      const POL_LAST   = "/tmp/avp-logs/avp-pol-cron.log";
 
       let cmd = "";
 
