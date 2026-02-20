@@ -1,3 +1,5 @@
+## v2.2.0 (2026-02-20)
+* EXP: inicia porta nativa do engine em Python. Lê devices.conf, calcula idade de handshake via wg, mede RTT via ping, pontua interfaces, escolhe o melhor túnel ou fallback WAN e aplica regras com ip rule/route. Usa avp_lib para registrar eventos, erros e atualizar o estado.
 ## v2.1.0 (2026-02-20)
 * EXP: engine Python nativo — registra início e fim das ações via avp_lib e delega comandos ao avp-eng.sh.
 
