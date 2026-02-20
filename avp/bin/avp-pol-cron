@@ -17,7 +17,7 @@ import subprocess
 # Constants
 ROTATE_MAX = 262144  # 256 KiB
 COMPONENT = "AVP-POL-CRON"
-POL = "/jffs/scripts/avp-pol.sh"
+POL = "/jffs/scripts/avp/bin/avp-pol"
 
 def ts() -> str:
     """Return timestamp in %F %T format."""

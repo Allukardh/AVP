@@ -131,8 +131,8 @@ cru d AVP-POL 2>/dev/null
 # Failover multi-dispositivo a cada 5 minutos
 # (AVP-POL decide se executa ou não, via AUTOVPN_ENABLED em global.conf)
 # (saída do cron é silenciada propositalmente)
-cru a AVP-POL "*/5 * * * * /bin/sh /jffs/scripts/avp/bin/avp-pol-cron.sh"
-AVP_ENG_ROTATE_PAYLOAD='export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin"; export GIT_PAGER=cat PAGER=cat; /jffs/scripts/avp/bin/avp-eng.sh --rotate-usb >/dev/null 2>&1'
+cru a AVP-POL "*/5 * * * * /jffs/scripts/avp/bin/avp-pol-cron"
+AVP_ENG_ROTATE_PAYLOAD='export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin"; export GIT_PAGER=cat PAGER=cat; /jffs/scripts/avp/bin/avp-eng --rotate-usb >/dev/null 2>&1'
 cru d AVP-ENG-ROTATE 2>/dev/null || :
 cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
 
@@ -150,7 +150,7 @@ cru a AVP-ENG-ROTATE "58 5 * * * /bin/sh -c '$AVP_ENG_ROTATE_PAYLOAD'"
   ln -sf /jffs/scripts/avp/www/avp-status.json /www/user/avp-status.json 2>/dev/null
 
   # sobe feeder (idempotente)
-  [ -x /jffs/scripts/avp/bin/avp-webui-feed.sh ] && /jffs/scripts/avp/bin/avp-webui-feed.sh start >/dev/null 2>&1
+  [ -x /jffs/scripts/avp/bin/avp-webui-feed ] && /jffs/scripts/avp/bin/avp-webui-feed.sh start >/dev/null 2>&1
 } &
 
 # ============================================================

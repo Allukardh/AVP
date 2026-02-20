@@ -23,8 +23,8 @@ WWW_DIR = f"{ADDON_DIR}/www"
 ASP_DST = "/www/user/avp.asp"
 JSON_DST = "/www/user/avp-status.json"
 SCRIPT_DIR = Path(__file__).resolve().parent
-CLI = "/jffs/scripts/avp-cli.sh"
-FEED = "/jffs/scripts/avp-webui-feed.sh"
+CLI = "/jffs/scripts/avp/bin/avp-cli"
+FEED = "/jffs/scripts/avp/bin/avp-webui-feed"
 
 # Logging helpers
 def ts() -> str:

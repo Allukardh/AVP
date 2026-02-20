@@ -18,7 +18,7 @@ import signal
 import atexit
 from pathlib import Path
 
-CLI = "/jffs/scripts/avp-cli.sh"
+CLI = "/jffs/scripts/avp/bin/avp-cli"
 OUT = "/jffs/scripts/avp/www/avp-status.json"
 PID_FILE = "/tmp/avp_webui_feed.pid"
 LOCK_DIR = "/tmp/avp_webui_feed.lock"

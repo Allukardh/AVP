@@ -1,47 +1,40 @@
-#!/bin/sh
-# =============================================================
-# AutoVPN Platform (AVP)
-# Component : AVP-WEBUI
-# File      : service-event
-# Role      : Firmware hook for WebUI Console actions (rc_service -> avp-action.sh)
-# Version : v1.0.5 (2026-02-17)
-# Status    : stable
-# =============================================================
-#
-# CHANGELOG
-# - v1.0.5 (2026-02-17)
-# * CHG: atualiza ACT/POL p/ nova estrutura (avp/bin) (hook usa caminho absoluto)
-# - v1.0.4 (2026-02-16)
-#   * FIX: WebUI backend SSOT last-action (write SSOT + /www/user symlink)
-#   * FIX: ensure_monotonic_ts usa SSOT (evita break no polling)
-#   * FIX: auto token_get no backend p/ actions (profile_list/toggle/etc)
-# - v1.0.3 (2026-02-10)
-#   * FIX: ensure monotonic ts in last.json (avoid same-second actions breaking UI polling)
-# - v1.0.2 (2026-02-10)
-#   * FIX: accept Merlin service-event args (event=start/stop/restart, target=svc) and also restart_svc form
-#   * ADD: log argv + normalized event/target for observability
-# - v1.0.1 (2026-02-10)
-#   * FIX: BusyBox/Merlin: remove dependency on 'install' (use cp+chmod only)
-#   * FIX: last-action writer now deterministic on Merlin
-# - v1.0.0 (2026-02-10)
-#   * ADD: hook for rc_service=avp_webui_restart (nvram contract avp_webui_*)
-#   * ADD: last-action JSON writer (/www/user + /tmp/var/wwwext) + action log
-#   * ADD: alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
-# =============================================================
+## v2.0.0 (2026-02-20)
+* MIG: altera variáveis ACT/POL para usar avp-action e avp-pol (binários Python).
+* MIG: ajusta mensagens de erro conforme nova nomenclatura.
+
+CHANGELOG
+- v1.0.5 (2026-02-17)
+* CHG: atualiza ACT/POL p/ nova estrutura (avp/bin) (hook usa caminho absoluto)
+- v1.0.4 (2026-02-16)
+  * FIX: WebUI backend SSOT last-action (write SSOT + /www/user symlink)
+  * FIX: ensure_monotonic_ts usa SSOT (evita break no polling)
+  * FIX: auto token_get no backend p/ actions (profile_list/toggle/etc)
+- v1.0.3 (2026-02-10)
+  * FIX: ensure monotonic ts in last.json (avoid same-second actions breaking UI polling)
+- v1.0.2 (2026-02-10)
+  * FIX: accept Merlin service-event args (event=start/stop/restart, target=svc) and also restart_svc form
+  * ADD: log argv + normalized event/target for observability
+- v1.0.1 (2026-02-10)
+  * FIX: BusyBox/Merlin: remove dependency on 'install' (use cp+chmod only)
+  * FIX: last-action writer now deterministic on Merlin
+- v1.0.0 (2026-02-10)
+  * ADD: hook for rc_service=avp_webui_restart (nvram contract avp_webui_*)
+  * ADD: last-action JSON writer (/www/user + /tmp/var/wwwext) + action log
+  * ADD: alias map (device_remove->device_del, device_update->device_set) + toggle (enable/disable)
+=============================================================
 
 SCRIPT_VER="v1.0.5"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
-
 LOGP="/tmp/avp_logs/avp_webui_action.log"
 LAST_WWW="/www/user/avp-action-last.json"
 LAST_SSOT="/jffs/scripts/avp/www/avp-action-last.json"
 
 LAST_TMP="/tmp/var/wwwext/avp-action-last.json"
-# --- AVP SSOT: last action JSON (canonical) ---
-# escreve primeiro no SSOT e garante /www/user como symlink
+--- AVP SSOT: last action JSON (canonical) ---
+escreve primeiro no SSOT e garante /www/user como symlink
 if [ -n "${LAST_SSOT:-}" ]; then
   mkdir -p "$(dirname "$LAST_SSOT")" 2>/dev/null || true
 fi

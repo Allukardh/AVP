@@ -215,7 +215,7 @@ def main(argv: list) -> int:
     ok_tok, rc = require_token(token)
     if not ok_tok:
         return rc or 22
-    pol = '/jffs/scripts/avp-pol.sh'
+    pol = '/jffs/scripts/avp/bin/avp-pol'
     if not (os.path.isfile(pol) and os.access(pol, os.X_OK)):
         err(10, 'dispatch', 'avp-pol.sh not found', '{}')
         return 10
