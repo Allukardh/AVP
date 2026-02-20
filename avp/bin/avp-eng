@@ -4,36 +4,36 @@
 # Component : AVP-ENG
 # File      : avp-eng
 # Role      : Multi-Device VPN Failover (Engine) — Python native
-# Version   : v2.2.0 (2026-02-20)
+# Version   : v2.3.0 (2026-02-20)
 # Status    : experimental
 # =============================================================
-SCRIPT_VER = "v2.2.0"
+SCRIPT_VER = "v2.3.0"
 
 import os
 import sys
 import time
 import subprocess
 import re
+import json
 from pathlib import Path
-from typing import List, Tuple, Optional
-from avp.lib.avp_lib import log_event, log_error, state_get, state_set
+from avp.lib.avp_lib import log_event, log_error, state_get, state_set, avp_epoch
 
-# Configurações básicas
+# Directories / constants
 CANON_BASE = "/jffs/scripts"
 STATE_DIR = f"{CANON_BASE}/avp/state"
 POLICY_DIR = f"{CANON_BASE}/autovpn/policy"
 DEVICES_CONF = f"{POLICY_DIR}/devices.conf"
-WGS = ["wgc1", "wgc2", "wgc3", "wgc4", "wgc5"]
-PING_TARGETS = ["1.1.1.1", "8.8.8.8"]
+WGS = ["wgc1","wgc2","wgc3","wgc4","wgc5"]
+PING_TARGETS = ["1.1.1.1","8.8.8.8"]
 PING_COUNT = 2
 PING_W = 2
-HANDSHAKE_MAX_AGE = 180  # segundos
+HANDSHAKE_MAX_AGE = 180
+DWARN_TTL = 300  # degrade TTL in seconds
 
-def load_devices() -> List[Tuple[str, str, str, str]]:
-    """Carrega devices.conf retornando lista de (label, ip, pref, statefile)."""
-    devices: List[Tuple[str, str, str, str]] = []
+def load_devices():
+    devices = []
     if not os.path.isfile(DEVICES_CONF):
-        log_error("ENG", f"devices.conf ausente: {DEVICES_CONF}", rc=20)
+        log_error("ENG","devices.conf ausente",rc=20)
         return devices
     with open(DEVICES_CONF) as f:
         for line in f:
@@ -44,154 +44,167 @@ def load_devices() -> List[Tuple[str, str, str, str]]:
             if len(parts) < 3:
                 continue
             label, ip, pref = parts[:3]
-            sl = re.sub(r'[^A-Za-z0-9]+', '_', label.strip().lower()).strip('_') or 'device'
+            sl = re.sub(r'[^A-Za-z0-9]+','_',label.lower()).strip('_') or 'device'
             statefile = f"{STATE_DIR}/avp_{sl}.state"
-            devices.append((label, ip, pref, statefile))
+            devices.append((label,ip,pref,statefile))
     return devices
 
-def handshake_age(iface: str) -> Optional[int]:
-    """Retorna idade da handshake mais recente (segundos) ou None se não houver."""
+def handshake_age(iface):
     try:
         now = int(time.time())
-        proc = subprocess.run(["wg", "show", iface, "latest-handshakes"],
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        proc = subprocess.run(["wg","show",iface,"latest-handshakes"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         ages = []
         for line in proc.stdout.strip().split("\n"):
             parts = line.split()
-            if len(parts) >= 2:
+            if len(parts)>=2:
                 try:
                     ts = int(parts[1])
-                    if ts > 0:
-                        ages.append(now - ts)
+                    if ts>0:
+                        ages.append(now-ts)
                 except ValueError:
                     pass
-        if ages:
-            return max(ages)
-    except Exception:
-        pass
+        if ages: return max(ages)
+    except Exception: pass
     return None
 
-def ping_iface(iface: str, target: str) -> Optional[float]:
-    """Retorna média RTT (ms) de ping via interface; None se falhar."""
+def ping_iface(iface,target):
     try:
-        cmd = ["ping", "-I", iface, "-c", str(PING_COUNT), "-W", str(PING_W), target]
+        cmd=["ping","-I",iface,"-c",str(PING_COUNT),"-W",str(PING_W),target]
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         if proc.returncode != 0:
             return None
         match = re.search(r"min/avg/max/[\\w]+=([0-9.]+)/([0-9.]+)/([0-9.]+)", proc.stdout)
         if match:
-            avg = float(match.group(2))
-            return avg
-    except Exception:
-        pass
+            return float(match.group(2))
+    except Exception: pass
     return None
 
-def score_iface(iface: str) -> Tuple[int, str]:
-    """Calcula pontuação da interface; menor é melhor. Retorna (score, desc)."""
-    # Checa se interface está UP
-    proc = subprocess.run(["ip", "link", "show", iface], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-    if "UP" not in proc.stdout:
-        return (99999, f"{iface}:DOWN")
-    # Idade da handshake
+def _degrade_ts_key(iface):
+    return f"d_warn_ts_{iface}"
+
+def is_degraded(iface):
+    ts_str = state_get(_degrade_ts_key(iface))
+    if not ts_str:
+        return False
+    try:
+        ts=int(ts_str)
+    except Exception:
+        return False
+    now = avp_epoch()
+    if now - ts >= DWARN_TTL:
+        # TTL expired -> clear
+        state_set(_degrade_ts_key(iface),"0")
+        return False
+    return True
+
+def mark_degraded(iface):
+    now = avp_epoch()
+    state_set(_degrade_ts_key(iface), str(now))
+
+def score_iface(iface):
+    # down? huge penalty
+    ilink = subprocess.run(["ip","link","show",iface], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    if "UP" not in ilink.stdout:
+        return (99999,f"{iface}:DOWN")
+    if is_degraded(iface):
+        return (9999,f"{iface}:DEGRADED")
     age = handshake_age(iface)
     if age is None:
-        hs_penalty = 5000
-    else:
-        hs_penalty = age
-    # Ping
-    rtts = []
+        # no handshake -> degrade
+        mark_degraded(iface)
+        return (9999,f"{iface}:NOHS")
+    if age > HANDSHAKE_MAX_AGE:
+        mark_degraded(iface)
+        return (9999,f"{iface}:AGE>{HANDSHAKE_MAX_AGE}")
+    rtts=[]
     for t in PING_TARGETS:
-        rtt = ping_iface(iface, t)
-        if rtt is not None:
-            rtts.append(rtt)
+        r=ping_iface(iface,t)
+        if r is not None:
+            rtts.append(r)
     if not rtts:
-        rtt_score = 3000
-    else:
-        rtt_score = sum(rtts) / len(rtts)
-    score = int(hs_penalty + rtt_score)
-    return score, f"{iface}:UP age={age if age is not None else 'NA'}s rtt={rtt_score:.2f}ms"
+        # no reachable target
+        mark_degraded(iface)
+        return (9999,f"{iface}:PINGFAIL")
+    rtt_score=sum(rtts)/len(rtts)
+    score=int(age + rtt_score)
+    return (score,f"{iface}:age={age}s rtt={rtt_score:.2f}")
 
-def apply_route(device: Tuple[str, str, str, str], table: str) -> bool:
-    """Aplica regra de roteamento (pref) para dispositivo; table='vpn' ou 'wan'."""
+def apply_route(device, table):
     label, ip, pref, statefile = device
     pref_num = pref
     if table == "vpn":
-        # Adiciona regra de roteamento via tabela de interface
-        # ip rule add pref PREF from IP lookup TBL
-        # ip route flush cache
-        tbl = pref_num
+        tbl=pref_num
         cmds = [
-            ["ip", "rule", "delete", "pref", pref_num],
-            ["ip", "rule", "add", "pref", pref_num, "from", ip, "lookup", tbl],
-            ["ip", "route", "flush", "cache"],
+            ["ip","rule","delete","pref",pref_num],
+            ["ip","rule","add","pref",pref_num,"from",ip,"lookup",tbl],
+            ["ip","route","flush","cache"]
         ]
-        ok = True
-        for cmd in cmds:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        ok &= state_set("dev_mode", "vpn")
+        for cmd in cmds: subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        state_set("dev_mode","vpn")
     else:
-        # Remove regra customizada (volta pro default)
-        subprocess.run(["ip", "rule", "delete", "pref", pref_num], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["ip", "route", "flush", "cache"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        ok = state_set("dev_mode", "wan")
-    return ok
+        subprocess.run(["ip","rule","delete","pref",pref_num], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["ip","route","flush","cache"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        state_set("dev_mode","wan")
 
-def run_engine() -> int:
-    """Loop principal: para cada device, calcula score das interfaces e aplica melhor rota."""
-    devices = load_devices()
+def run_engine():
+    devices=load_devices()
     if not devices:
         return 20
     for device in devices:
         label, ip, pref, statefile = device
-        # Carrega modo atual
-        cur_mode = state_get("dev_mode") or "unknown"
-        log_event("ENG", f"[{label}] cur_mode={cur_mode}", rc=0)
-        scores = []
-        for iface in WGS:
-            sc, desc = score_iface(iface)
-            scores.append((sc, iface, desc))
-            log_event("ENG", f"[{label}] score {desc} -> {sc}", rc=0)
-        # Escolhe melhor
-        scores.sort(key=lambda x: x[0])
-        best_sc, best_if, best_desc = scores[0]
-        log_event("ENG", f"[{label}] best {best_if} score={best_sc}", rc=0)
-        if best_sc < 99999:
-            # Aplica VPN se não estamos nela
-            if cur_mode != "vpn":
-                apply_route(device, "vpn")
+        cur_mode=state_get("dev_mode") or "unknown"
+        log_event("ENG",f"[{label}] cur_mode={cur_mode}",rc=0)
+        scores=[]
+        for wg in WGS:
+            sc,desc=score_iface(wg)
+            scores.append((sc,wg,desc))
+            log_event("ENG",f"[{label}] score {desc} -> {sc}",rc=0)
+        scores.sort(key=lambda x:x[0])
+        best_sc,best_wg,best_desc=scores[0]
+        log_event("ENG",f"[{label}] best {best_wg} score={best_sc}",rc=0)
+        if best_sc<9999:
+            if cur_mode!="vpn":
+                apply_route(device,"vpn")
         else:
-            # Sem tunel viável, fallback WAN se não estamos nele
-            if cur_mode != "wan":
-                apply_route(device, "wan")
+            if cur_mode!="wan":
+                apply_route(device,"wan")
     return 0
 
-def main(argv: List[str]) -> int:
+def status_engine():
+    out={}
+    devices=load_devices()
+    if not devices:
+        return json.dumps({"error":"no devices"})
+    results=[]
+    cur_mode=state_get("dev_mode") or "unknown"
+    out["cur_mode"]=cur_mode
+    for device in devices:
+        label, ip, pref, statefile = device
+        dev_info={"label":label,"ip":ip,"pref":pref}
+        sc_list=[]
+        for wg in WGS:
+            sc,desc=score_iface(wg)
+            sc_list.append({"iface":wg,"score":sc,"desc":desc})
+        sc_list.sort(key=lambda x:x["score"])
+        dev_info["best_iface"]=sc_list[0]["iface"]
+        dev_info["best_score"]=sc_list[0]["score"]
+        dev_info["ifaces"]=sc_list
+        results.append(dev_info)
+    out["devices"]=results
+    return json.dumps(out)
+
+def main(argv):
     if not argv:
-        print("Usage: avp-eng <run|status|help>")
+        print("Usage: avp-eng [run|status]")
         return 0
-    cmd = argv[0]
-    if cmd == "run":
+    cmd=argv[0]
+    if cmd=="run":
         return run_engine()
-    elif cmd == "status":
-        print("status: not yet implemented in python")
+    if cmd=="status":
+        print(status_engine())
         return 0
-    elif cmd in ("-h", "--help", "help"):
-        print("Usage: avp-eng run")
-        return 0
-    else:
-        return call_legacy(argv)  # fallback to legacy for unknown
-    return 0
+    print("Usage: avp-eng [run|status]")
+    return 1
 
-# fallback to legacy for unknown commands
-def call_legacy(args: list) -> int:
-    legacy = os.environ.get("AVP_ENG_SH", "/jffs/scripts/avp-eng.sh")
-    if not os.path.isfile(legacy) or not os.access(legacy, os.X_OK):
-        log_error("ENG", f"legacy engine not found: {legacy}", rc=127)
-        return 127
-    try:
-        return subprocess.call([legacy] + args)
-    except Exception:
-        return 1
-
-if __name__ == "__main__":
+if __name__=="__main__":
     sys.exit(main(sys.argv[1:]))

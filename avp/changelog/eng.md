@@ -1,3 +1,5 @@
+## v2.3.0 (2026-02-20)
+* EXP: engine Python completo — implementa degradacao com TTL (`DWARN_TTL`), calcula pontuação com idade de handshake e RTT, marca interfaces degradadas, seleciona melhor túnel e fallback WAN, e implementa comando `status` que retorna JSON por dispositivo.
 ## v2.2.0 (2026-02-20)
 * EXP: inicia porta nativa do engine em Python. Lê devices.conf, calcula idade de handshake via wg, mede RTT via ping, pontua interfaces, escolhe o melhor túnel ou fallback WAN e aplica regras com ip rule/route. Usa avp_lib para registrar eventos, erros e atualizar o estado.
 ## v2.1.0 (2026-02-20)
