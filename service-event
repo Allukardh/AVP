@@ -128,7 +128,6 @@ parse_device_contract() {
   printf 'label=%s ip=%s rule=%s\n' "$label" "$ip" "$rule"
 }
 
-
 ensure_monotonic_ts() {
   tmpf="${1:-}"
   [ -n "${tmpf:-}" ] || return 1
