@@ -1,19 +1,13 @@
 # CHANGELOG — AVP-TAG
 
 ## v1.0.9 (2026-02-21)
-
 - tratamento amigável para tag local existente sem remoto (mensagem clara e publicação via --publish)
-
-# AVP-TAG
-
 ## v1.0.8 (2026-02-21)
 - FIX: valida release via changelog externo (avp/changelogs/<script>.md) no mini-check de rel/*
 - DROP: remove validação legada de CHANGELOG embutido no .sh e check de CHANGELOG raiz
-
 ## v1.0.7 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-tag.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.6 (2026-02-15)
 - CHG: rel/* publica por padrão (SSOT) — use --no-publish para desligar
 - ADDED: --help/-h + mensagem explícita quando publish estiver desligado

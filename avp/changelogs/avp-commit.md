@@ -1,14 +1,15 @@
-# AVP-COMMIT
+# CHANGELOG — AVP-COMMIT
 
+## v1.0.14 (2026-02-21)
+- POLISH: pre-gate do commit normaliza changelog .md apenas dos avp/bin/*.sh no escopo
+- CHG: recarrega CHANGED após md hygiene para incluir avp/changelogs/*.md gerados pela higiene
 ## v1.0.13 (2026-02-21)
-* CHG: valida versão atual no changelog externo (avp/changelogs/<script>.md) para arquivos .sh
-* ADD: helpers internos para resolver caminho do changelog externo e ler primeira versão do .md
-* TUNE: alinhamento com modelo de CHANGELOG externalizado
-
+- CHG: valida versão atual no changelog externo (avp/changelogs/<script>.md) para arquivos .sh
+- ADD: helpers internos para resolver caminho do changelog externo e ler primeira versão do .md
+- TUNE: alinhamento com modelo de CHANGELOG externalizado
 ## v1.0.12 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-commit.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.11 (2026-02-15)
 - FIX: gate exit 0 só valida scripts estruturais quando alterados (CHANGED)
 - FIX: ultimo comando executavel ignora comentarios e linhas em branco

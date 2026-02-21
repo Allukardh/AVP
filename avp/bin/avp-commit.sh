@@ -4,11 +4,11 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version   : v1.0.13 (2026-02-21)
+# Version   : v1.0.14 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.13"
+SCRIPT_VER="v1.0.14"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -56,6 +56,28 @@ CHANGED_WORK="$(git diff --name-only)"
 CHANGED_CACHED="$(git diff --cached --name-only)"
 CHANGED="$(printf '%s\n%s\n' "$CHANGED_WORK" "$CHANGED_CACHED" | sed '/^$/d' | sort -u)"
 [ -n "$CHANGED" ] || { echo "ERROR: nenhuma alteracao detectada"; exit 1; }
+
+# ---- MD HYGIENE SCOPED (pre-gate) ----
+# Normaliza changelog .md apenas dos scripts .sh no escopo atual do commit.
+if command -v avp-meta.sh >/dev/null 2>&1; then
+  echo "$CHANGED" | while IFS= read -r _f; do
+    case "$_f" in
+      avp/bin/*.sh)
+        [ -f "$_f" ] || continue
+        avp-meta.sh --normalize-md "$_f" >/dev/null 2>&1 || {
+          echo "WARN: md hygiene falhou para $_f" >&2
+        }
+        ;;
+    esac
+  done
+
+  # Recalcula CHANGED (a higiene pode tocar avp/changelogs/*.md e isso deve entrar no commit)
+  CHANGED_WORK="$(git diff --name-only)"
+  CHANGED_CACHED="$(git diff --cached --name-only)"
+  CHANGED="$(printf '%s\n%s\n' "$CHANGED_WORK" "$CHANGED_CACHED" | sed '/^$/d' | sort -u)"
+  [ -n "$CHANGED" ] || { echo "ERROR: nenhuma alteracao detectada apos md hygiene"; exit 1; }
+fi
+
 
 # ---- MULTI .SH GATE ----
 SH_FILES="$(echo "$CHANGED" | grep '\.sh$' || true)"

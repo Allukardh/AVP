@@ -4,11 +4,11 @@
 # Component : AVP-META
 # File      : avp-meta.sh
 # Role      : Metadata governor (header/changelog/SCRIPT_VER)
-# Version   : v1.0.5 (2026-02-21)
+# Version   : v1.0.7 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.5"
+SCRIPT_VER="v1.0.7"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -214,16 +214,10 @@ normalize_changelog_md_body(){
       end=NR
       while (end>=start && lines[end]=="") end--
 
-      blank=0
       for (i=start; i<=end; i++) {
-        if (lines[i] == "") {
-          if (blank) continue
-          blank=1
-          print ""
-        } else {
-          blank=0
-          print lines[i]
-        }
+        # corpo compacto: sem linhas em branco
+        if (lines[i] == "") continue
+        print lines[i]
       }
     }
   ' "$in" > "$out" || return 1
@@ -257,7 +251,10 @@ normalize_one_md_file(){
   esac
 
   awk '
-    NR==1 && $0 ~ /^# / { next }
+    # remove headers legados em qualquer posicao do corpo (.md)
+    # (mantem "## v..." porque isso nao casa com "^# ")
+    $0 ~ /^# CHANGELOG[[:space:]]*[-—]/ { next }
+    $0 ~ /^# [A-Za-z0-9._-]+$/ { next }
     { print }
   ' "$md" > "$body" || {
     rm -f "$body" 2>/dev/null || true
