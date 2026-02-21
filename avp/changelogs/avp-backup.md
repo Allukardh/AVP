@@ -1,9 +1,8 @@
-# AVP-UTIL
+# CHANGELOG — AVP-UTIL
 
 ## v1.0.9 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-backup.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.8 (2026-02-20)
 - CHG: targets dinâmicos via git ls-files (repo-aware)
 - CHG: inclui hooks raiz + avp/bin + avp/lib (scripts versionados)

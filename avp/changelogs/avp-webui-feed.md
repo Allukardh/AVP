@@ -1,9 +1,9 @@
-# AVP-WEBUI Feeder
+# CHANGELOG — AVP-WEBUI Feeder
 
+# AVP-WEBUI Feeder
 ## v1.2.17 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-webui-feed.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.2.16 (2026-02-16)
 - FIX: OUT SSOT em /jffs/scripts/avp/www
 - FIX: start do feeder daemoniza corretamente (redirect >/dev/null 2>&1 &)

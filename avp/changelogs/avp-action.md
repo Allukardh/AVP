@@ -1,9 +1,8 @@
-# AVP-ACTION
+# CHANGELOG — AVP-ACTION
 
 ## v1.0.21 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-action.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.20 (2026-01-27)
 - CHORE: hygiene (trim trailing WS; collapse blank lines; no logic change)
 ## v1.0.19 (2026-01-27)

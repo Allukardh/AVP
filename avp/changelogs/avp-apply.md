@@ -1,9 +1,8 @@
-# AVP-APPLY
+# CHANGELOG — AVP-APPLY
 
 ## v1.0.27 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-apply.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.26 (2026-02-15)
 - CHANGE: baseline policy alinhada com avp-tag.sh (status --porcelain)
 ## v1.0.25 (2026-02-14)

@@ -1,9 +1,8 @@
-# AVP-POL
+# CHANGELOG — AVP-POL
 
 ## v1.3.24 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-pol.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.3.23 (2026-02-20)
 - BREAK: remove auto-backup implicito (pre_run_backup) do fluxo run
 - CHG: backup passa a ser manual/on-demand

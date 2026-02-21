@@ -1,9 +1,8 @@
-# AVP-CLI
+# CHANGELOG — AVP-CLI
 
 ## v1.0.19 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-cli.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.18 (2026-02-16)
 - FIX: JSON agora realmente inclui "route" por device (alias de "table") — compat WebUI
 - DOC: help/hint incluem --json (alias do default)

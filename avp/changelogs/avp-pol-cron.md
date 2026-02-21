@@ -1,9 +1,8 @@
-# AVP-POL-CRON
+# CHANGELOG — AVP-POL-CRON
 
 ## v1.0.23 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-pol-cron.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.22 (2026-02-10)
 - HARDEN: emit_error detecta log_error mesmo sem has_fn (fallback silencioso)
 ## v1.0.21 (2026-02-10)

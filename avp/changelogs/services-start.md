@@ -1,9 +1,8 @@
-# AVP-BOOT
+# CHANGELOG — AVP-BOOT
 
 ## v1.1.26 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/services-start.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.1.25 (2026-02-17)
 - POLISH: AVP_ENG_ROTATE_PAYLOAD inclui /jffs/scripts/avp/bin no PATH (coerencia de estrutura)
 ## v1.1.24 (2026-02-17)

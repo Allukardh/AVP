@@ -1,9 +1,8 @@
-# AVP-BOOT
+# CHANGELOG — AVP-BOOT
 
 ## v1.0.9 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/post-mount.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.8 (2026-02-17)
 - CHG: inclui /jffs/scripts/avp/bin no PATH (consistência do hook)
 ## v1.0.7 (2026-02-16)

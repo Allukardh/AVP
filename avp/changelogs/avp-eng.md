@@ -1,9 +1,8 @@
-# AVP-ENG
+# CHANGELOG — AVP-ENG
 
 ## v1.2.41 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-eng.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.2.40 (2026-02-06)
 - FIX: init dev_mode no state quando ausente (evita WebUI/CLI "unknown" em devices novos)
 ## v1.2.39 (2026-01-27)

@@ -1,9 +1,8 @@
-# AVP-LIB
+# CHANGELOG — AVP-LIB
 
 ## v1.0.11 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-lib.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.10 (2026-02-08)
 - FIX: log_action() garante rc numerico antes de logar (evita JSON invalido)
 ## v1.0.9 (2026-02-06)

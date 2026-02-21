@@ -1,9 +1,8 @@
-# AVP-DIAG
+# CHANGELOG — AVP-DIAG
 
 ## v1.2.6 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-diag.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.2.5 (2026-01-26)
 - VERSION: bump patch (pos harden canônico)
 ## v1.2.4 (2026-01-18)

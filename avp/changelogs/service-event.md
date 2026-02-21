@@ -1,9 +1,8 @@
-# AVP-WEBUI
+# CHANGELOG — AVP-WEBUI
 
 ## v1.0.6 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/service-event.md
 - CHG: remove bloco CHANGELOG embutido do script
-
 ## v1.0.5 (2026-02-17)
 - CHG: atualiza ACT/POL p/ nova estrutura (avp/bin) (hook usa caminho absoluto)
 ## v1.0.4 (2026-02-16)
