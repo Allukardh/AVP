@@ -1,5 +1,9 @@
 # AVP-TAG
 
+## v1.0.8 (2026-02-21)
+* FIX: valida release via changelog externo (avp/changelogs/<script>.md) no mini-check de rel/*
+* DROP: remove validação legada de CHANGELOG embutido no .sh e check de CHANGELOG raiz
+
 ## v1.0.7 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-tag.md
 - CHG: remove bloco CHANGELOG embutido do script

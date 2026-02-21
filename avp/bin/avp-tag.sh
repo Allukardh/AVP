@@ -4,16 +4,33 @@
 # Component : AVP-TAG
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version   : v1.0.7 (2026-02-20)
+# Version   : v1.0.8 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.7"
+SCRIPT_VER="v1.0.8"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
 
 die(){ echo "ERROR: $*" >&2; exit 1; }
+
+changelog_md_for() {
+  _f="$1"
+  _b="$(basename "$_f")"
+  case "$_b" in
+    *.sh) _b="${_b%.sh}" ;;
+  esac
+  echo "avp/changelogs/${_b}.md"
+}
+
+get_md_first_ver() {
+  _md="$1"
+  [ -f "$_md" ] || return 1
+  grep -m1 -E '^##[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+' "$_md" 2>/dev/null \
+    | sed -n 's/^##[[:space:]]*\(v[0-9][0-9.]*\).*/\1/p'
+}
+
 
 usage(){
   cat <<'USG'
@@ -100,8 +117,12 @@ rel_minicheck_last_commit(){
     [ -n "$hv" ] || die "Version ausente em $f"
     [ "$hv" = "$sv" ] || die "SCRIPT_VER mismatch em $f (Version=$hv SCRIPT_VER=$sv)"
 
-    awk '/^# CHANGELOG/{flag=1;next}/^# =============================================================/{flag=0}flag' "$f" | grep -q "$hv" \
-      || die "CHANGELOG nao contem $hv em $f"
+    md="$(changelog_md_for "$f")"
+    mdv="$(get_md_first_ver "$md" || true)"
+
+    [ -f "$md" ] || die "CHANGELOG externo ausente: $md (script: $f)"
+    [ -n "$mdv" ] || die "CHANGELOG externo sem entrada de versão em $md"
+    [ "$mdv" = "$hv" ] || die "CHANGELOG nao contem $hv em $f (topo de $md = ${mdv:-none})"
 
     [ "$hv" = "$name" ] || die "Version ($hv) nao bate com tag rel ($name) em $f"
   done
@@ -143,15 +164,6 @@ git tag | grep -q "^${tag}$" && {
   echo "Tag ${tag} already exists."
   exit 1
 }
-
-# --- validação adicional para releases
-case "$kind" in
-  rel)
-    if [ -f CHANGELOG ] && ! grep -q "${name}" CHANGELOG; then
-      die "CHANGELOG não possui entrada para ${name}"
-    fi
-    ;;
-esac
 
 # cria tag anotada
 git tag -a "$tag" -m "$msg" "$obj"
