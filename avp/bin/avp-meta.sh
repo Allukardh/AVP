@@ -4,11 +4,11 @@
 # Component : AVP-META
 # File      : avp-meta.sh
 # Role      : Metadata governor (header/changelog/SCRIPT_VER)
-# Version   : v1.0.4 (2026-02-21)
+# Version   : v1.0.5 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.4"
+SCRIPT_VER="v1.0.5"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -229,6 +229,60 @@ normalize_changelog_md_body(){
   ' "$in" > "$out" || return 1
 }
 
+normalize_md_path_for(){
+  p="$1"
+  case "$p" in
+    *.md) printf "%s\n" "$p"; return 0 ;;
+    *.sh) changelog_md_for "$p"; return $? ;;
+    *) return 1 ;;
+  esac
+}
+
+normalize_one_md_file(){
+  md="$1"
+  body="/tmp/avp_meta_normmd_$$.body"
+  comp=""
+
+  [ -n "$md" ] || die "normalize-md: caminho vazio"
+  [ -f "$md" ] || die "normalize-md: arquivo nao existe: $md"
+
+  first="$(head -n 1 "$md" 2>/dev/null || true)"
+  case "$first" in
+    "# CHANGELOG — "*) comp="${first#\# CHANGELOG — }" ;;
+    "# "*)             comp="${first#\# }" ;;
+    *)
+      b="$(basename "$md" .md)"
+      comp="$(printf "%s" "$b" | tr '[:lower:]' '[:upper:]')"
+      ;;
+  esac
+
+  awk '
+    NR==1 && $0 ~ /^# / { next }
+    { print }
+  ' "$md" > "$body" || {
+    rm -f "$body" 2>/dev/null || true
+    die "normalize-md: falha lendo $md"
+  }
+
+  write_changelog_md "$md" "$comp" "$body" || {
+    rm -f "$body" 2>/dev/null || true
+    die "normalize-md: falha escrevendo $md"
+  }
+
+  rm -f "$body" 2>/dev/null || true
+  log "OK: normalized md: $md"
+}
+
+normalize_md_all(){
+  found=0
+  for md in avp/changelogs/*.md; do
+    [ -f "$md" ] || continue
+    found=1
+    normalize_one_md_file "$md"
+  done
+  [ "$found" -eq 1 ] || die "normalize-md-all: nenhum .md em avp/changelogs"
+}
+
 write_changelog_md(){
   md="$1"; component="$2"; body="$3"
   norm="${md}.norm.$$"
@@ -243,7 +297,6 @@ write_changelog_md(){
     printf '# CHANGELOG — %s\n' "$component"
     printf '\n'
     [ -s "$norm" ] && cat "$norm"
-    printf '\n'
   } > "${md}.tmp" || {
     rm -f "$norm" "${md}.tmp" 2>/dev/null || true
     return 1
@@ -595,6 +648,8 @@ Usage:
 
   # Normalizar (sem bump):
   avp-meta.sh --normalize --targets <file> [<file>...]
+  avp-meta.sh --normalize-md <.sh|.md>
+  avp-meta.sh --normalize-md-all
 
   # Aplicar bump + changelog via spec JSON (jq obrigatório):
   avp-meta.sh --apply --spec /caminho/spec.json
@@ -609,6 +664,7 @@ U
 MODE=""
 SPEC=""
 TARGETS=""
+NORMALIZE_MD_ONE=""
 
 [ $# -ge 1 ] || { usage; exit 1; }
 
@@ -618,6 +674,8 @@ while [ $# -gt 0 ]; do
     --print-spec-template) MODE="print"; shift ;;
     --check) MODE="check"; shift ;;
     --normalize) MODE="normalize"; shift ;;
+    --normalize-md) MODE="normalize-md"; NORMALIZE_MD_ONE="${2:-}"; shift 2 ;;
+    --normalize-md-all) MODE="normalize-md-all"; shift ;;
     --apply) MODE="apply"; shift ;;
     --spec) SPEC="${2:-}"; shift 2 ;;
     --targets) shift; TARGETS="$*"; break ;;
@@ -626,7 +684,10 @@ while [ $# -gt 0 ]; do
 done
 
 case "$MODE" in
-  print) print_spec_template; exit 0 ;;
+  print)
+    print_spec_template
+    exit 0
+    ;;
   check)
     [ -n "${TARGETS:-}" ] || die "--check requer --targets"
     rc=0
@@ -642,10 +703,22 @@ case "$MODE" in
     done
     exit 0
     ;;
+  normalize-md)
+    [ -n "${NORMALIZE_MD_ONE:-}" ] || die "--normalize-md requer <.sh|.md>"
+    md_target="$(normalize_md_path_for "$NORMALIZE_MD_ONE")" || die "normalize-md: alvo invalido (use .sh ou .md): $NORMALIZE_MD_ONE"
+    normalize_one_md_file "$md_target"
+    exit 0
+    ;;
+  normalize-md-all)
+    normalize_md_all
+    exit 0
+    ;;
   apply)
     [ -n "${SPEC:-}" ] || die "--apply requer --spec"
     apply_spec "$SPEC"
     exit 0
     ;;
-  *) die "modo ausente/invalido (use --help)" ;;
+  *)
+    die "modo ausente/invalido (use --help)"
+    ;;
 esac
