@@ -4,11 +4,11 @@
 # Component : AVP-TAG
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version   : v1.0.8 (2026-02-21)
+# Version   : v1.0.9 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.8"
+SCRIPT_VER="v1.0.9"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -103,6 +103,11 @@ ensure_diff_check(){
   git diff --check >/dev/null 2>&1 || die "git diff --check falhou (whitespace/patch issues)"
 }
 
+remote_tag_exists(){
+  _t="$1"
+  git ls-remote --tags origin "refs/tags/${_t}" 2>/dev/null | grep -q .
+}
+
 rel_minicheck_last_commit(){
   # valida em .sh tocados no ultimo commit: Version/SCRIPT_VER/CHANGELOG contem tag
   files="$(git show -1 --name-only --pretty="" 2>/dev/null | grep "\.sh$" || true)"
@@ -142,7 +147,29 @@ case "$kind" in
     ;;
 esac
 
-git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1 && die "tag already exists: $tag"
+if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+  if remote_tag_exists "$tag"; then
+    die "tag already exists (local e remoto): $tag"
+  fi
+
+  # tag existe apenas localmente — trate como caso idempotente com UX melhor
+  if [ "$PUBLISH" -eq 1 ]; then
+    echo "INFO: tag $tag ja existe localmente, mas nao existe no remoto; publicando agora..."
+    ensure_main_branch
+    ensure_diff_check
+    case "$kind" in
+      rel) rel_minicheck_last_commit ;;
+    esac
+    git push origin main || die "push main falhou"
+    git push origin "$tag" || die "push tag falhou"
+    echo "OK: published existing local tag $tag"
+  else
+    echo "INFO: tag $tag ja existe localmente, mas nao existe no remoto."
+    echo "Para publicar: git push origin $tag"
+    echo "Ou reexecute com --publish."
+  fi
+  exit 0
+fi
 obj="$(git rev-parse "$ref")" || die "invalid ref: $ref"
 
 # -------------------------------
@@ -157,11 +184,6 @@ fi
 
 git rev-parse HEAD~1 >/dev/null 2>&1 || {
   echo "No previous commit to diff against."
-  exit 1
-}
-
-git tag | grep -q "^${tag}$" && {
-  echo "Tag ${tag} already exists."
   exit 1
 }
 

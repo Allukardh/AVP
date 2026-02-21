@@ -1,3 +1,9 @@
+# CHANGELOG — AVP-TAG
+
+## v1.0.9 (2026-02-21)
+
+- tratamento amigável para tag local existente sem remoto (mensagem clara e publicação via --publish)
+
 # AVP-TAG
 
 ## v1.0.8 (2026-02-21)

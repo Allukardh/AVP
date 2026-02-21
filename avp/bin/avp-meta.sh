@@ -4,11 +4,11 @@
 # Component : AVP-META
 # File      : avp-meta.sh
 # Role      : Metadata governor (header/changelog/SCRIPT_VER)
-# Version   : v1.0.2 (2026-02-21)
+# Version   : v1.0.3 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.2"
+SCRIPT_VER="v1.0.3"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -482,29 +482,34 @@ apply_spec(){
     tmp_base="/tmp/avp_meta_apply_$$_${i}"
     in_s="${tmp_base}.in"
     body="${tmp_base}.body"
-    chlog="${tmp_base}.chlog"
-    chlog_new="${tmp_base}.chlog_new"
+    md_body="${tmp_base}.md_body"
+    md_body_new="${tmp_base}.md_body_new"
     items="${tmp_base}.items"
     hdr="${tmp_base}.hdr"
     out="${tmp_base}.out"
 
     tr -d "\r" < "$path" > "$in_s" || die "falha lendo $path"
     extract_body "$in_s" "$body"
-    extract_changelog_lines "$in_s" "$chlog"
 
     # items from spec.changelog[]
     : > "$items"
     jq -r ".files[$i].changelog[]? // empty" "$spec" > "$items" 2>/dev/null || true
 
-    apply_entry_into_changelog "$chlog" "$ver" "$date_" "$items" "$chlog_new"
+    # changelog externo (.md): atualiza entrada no topo e preserva histórico
+    md_path="$(changelog_md_for "$path")"
+    extract_changelog_md_lines "$md_path" "$md_body"
+    apply_entry_into_changelog_md "$md_body" "$ver" "$date_" "$items" "$md_body_new"
 
-    write_canon_header "$hdr" "$component" "$file_field" "$role" "$ver" "$date_" "$status" "$ver" "$chlog_new"
+    # header canônico (changelog embutido nao e mais usado)
+    write_canon_header "$hdr" "$component" "$file_field" "$role" "$ver" "$date_" "$status" "$ver" "$md_body_new"
     cat "$hdr" "$body" > "$out" || die "falha gerando $path"
 
     mv "$out" "${path}.new" || die "falha preparando swap: ${path}.new"
     sh -n "${path}.new" 2>/dev/null || { rm -f "${path}.new"; die "sh -n falhou em ${path}.new"; }
     chmod 755 "${path}.new" 2>/dev/null || true
     mv "${path}.new" "$path" || die "falha no swap final: $path"
+
+    write_changelog_md "$md_path" "$component" "$md_body_new" || die "falha escrevendo changelog md: $md_path"
 
     log "OK: applied meta: $path => $ver ($date_)"
     rm -f "$tmp_base".* 2>/dev/null || true
