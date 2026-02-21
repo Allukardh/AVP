@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.45 (2026-02-21)
+# Version   : v1.2.46 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.2.45"
+SCRIPT_VER="v1.2.46"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -49,6 +49,7 @@ mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2
 DEVICES_CONF="/jffs/scripts/avp/policy/devices.conf"
 AVP_POL_BIN="/jffs/scripts/avp/bin/avp-pol.sh"
 RULE_PREF_BASE=11210
+PREFMAP_DB="/jffs/scripts/avp/state/prefmap.db"
 
 # (RULE_PREF e STATE_FILE são selecionados por device em runtime)
 RULE_PREF=""
@@ -602,6 +603,61 @@ sanitize_label() {
   echo "$OUT"
 }
 
+prefmap_ensure() {
+  mkdir -p "/jffs/scripts/avp/state" 2>/dev/null || return 1
+  [ -f "$PREFMAP_DB" ] || : >"$PREFMAP_DB" 2>/dev/null || return 1
+  return 0
+}
+
+prefmap_get() {
+  _mac="$(printf "%s" "${1:-}" | tr '[:lower:]' '[:upper:]')"
+  [ -n "${_mac:-}" ] || return 1
+  [ -f "$PREFMAP_DB" ] || return 1
+  awk -F'|' -v mac="$_mac" '
+    $1==mac && $2 ~ /^[0-9]+$/ { print $2; exit }
+  ' "$PREFMAP_DB" 2>/dev/null
+}
+
+prefmap_set() {
+  _mac="$(printf "%s" "${1:-}" | tr '[:lower:]' '[:upper:]')"
+  _pref="${2:-}"
+  [ -n "${_mac:-}" ] || return 1
+  echo "$_pref" | awk '($0 ~ /^[0-9]+$/){ok=1} END{exit ok?0:1}' >/dev/null 2>&1 || return 1
+
+  prefmap_ensure || return 1
+  _tmp="/tmp/avp_prefmap.$$"
+  awk -F'|' -v mac="$_mac" '
+    $1 != mac { print $0 }
+  ' "$PREFMAP_DB" 2>/dev/null >"$_tmp" || : >"$_tmp"
+  printf "%s|%s\n" "$_mac" "$_pref" >>"$_tmp" || { rm -f "$_tmp" 2>/dev/null || :; return 1; }
+  mv "$_tmp" "$PREFMAP_DB" 2>/dev/null || { rm -f "$_tmp" 2>/dev/null || :; return 1; }
+  return 0
+}
+
+prefmap_next_free() {
+  prefmap_ensure || return 1
+  ip rule show 2>/dev/null | awk -v base="$RULE_PREF_BASE" -v db="$PREFMAP_DB" '
+    BEGIN{
+      while ((getline line < db) > 0) {
+        n=split(line, a, "|")
+        if (n >= 2 && a[2] ~ /^[0-9]+$/ && a[2] >= base) used[a[2]] = 1
+      }
+      close(db)
+    }
+    {
+      p=$1
+      sub(/:$/, "", p)
+      if (p ~ /^[0-9]+$/ && p >= base) used[p] = 1
+    }
+    END{
+      for (p=base; p<65535; p++) {
+        if (!(p in used)) { print p; exit 0 }
+      }
+      exit 1
+    }
+  '
+}
+
 current_pref_for_ip_any() {
   _ip="$1"
   [ -n "${_ip:-}" ] || return 1
@@ -641,6 +697,8 @@ load_devices_from_ssot() {
   _ssot="$("$AVP_POL_BIN" device ssot 2>/dev/null || true)"
   [ -n "${_ssot:-}" ] || return 1
 
+  prefmap_ensure || return 1
+
   _idx=0
   _ssot_tmp="/tmp/avp_eng_ssot.$$"
   printf "%s\n" "$_ssot" >"$_ssot_tmp" 2>/dev/null || return 1
@@ -659,9 +717,26 @@ load_devices_from_ssot() {
     echo "$IP" | awk -F. 'NF!=4{exit 1} {for(i=1;i<=4;i++) if($i<0||$i>255) exit 1} END{exit 0}' >/dev/null 2>&1 || continue
 
     _idx=$((_idx+1))
-    PREF="$(current_pref_for_ip_any "$IP" 2>/dev/null || true)"
+
+    PREF=""
+    if [ -n "${MAC:-}" ]; then
+      PREF="$(prefmap_get "$MAC" 2>/dev/null || true)"
+    fi
+
+    if ! echo "${PREF:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
+      PREF="$(current_pref_for_ip_any "$IP" 2>/dev/null || true)"
+    fi
+
+    if ! echo "${PREF:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
+      PREF="$(prefmap_next_free 2>/dev/null || true)"
+    fi
+
     if ! echo "${PREF:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
       PREF=$((RULE_PREF_BASE + _idx))
+    fi
+
+    if [ -n "${MAC:-}" ]; then
+      prefmap_set "$MAC" "$PREF" 2>/dev/null || true
     fi
 
     SL="$(sanitize_label "$LABEL")"

@@ -1,5 +1,9 @@
 # CHANGELOG — AVP-ENG
 
+## v1.2.46 (2026-02-21)
+- FEAT: adiciona `prefmap.db` em `/jffs/scripts/avp/state/` para persistir `MAC -> pref` no AVP-ENG
+- FEAT: alocação de `pref` agora prioriza prefmap por MAC, depois reaproveita `ip rule`, e por fim aloca próximo livre >= `11210`
+- SAFE: reserva de `pref` fica estável por MAC (evita drift por reorder/rename na GUI do Merlin)
 ## v1.2.45 (2026-02-21)
 - FEAT: AVP-ENG passa a consumir inventário SSOT do VPN Director via `avp-pol.sh device ssot` (sem `devices.conf`)
 - FEAT: devices `enabled=0` na SSOT agora são ignorados pelo engine e têm limpeza de resíduos `ip rule` por IP
