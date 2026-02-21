@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.41 (2026-02-20)
+# Version   : v1.2.44 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.2.41"
+SCRIPT_VER="v1.2.44"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -55,7 +55,7 @@ WGS="wgc1 wgc2 wgc3 wgc4 wgc5"
 DEFAULT_WG="wgc1"
 
 : "${TARGETS:="8.8.8.8 1.1.1.1"}"
-: "${PINGCOUNT:=10}"
+: "${PINGCOUNT:=3}"
 : "${PINGW:=1}"
 : "${DWARN_TTL:=1800}"  # seconds; 0=off  (re-warn "still_degraded" por TTL)
 
@@ -252,19 +252,50 @@ require_cmds() {
 }
 
 # ---------- STATE ----------
+STATE_MEM_FILE=""
+
+state_store_file() {
+  if [ -n "${STATE_MEM_FILE:-}" ]; then
+    printf "%s" "$STATE_MEM_FILE"
+  else
+    printf "%s" "$STATE_FILE"
+  fi
+}
+
+state_begin_device() {
+  [ -n "${STATE_FILE:-}" ] || return 0
+  STATE_MEM_FILE="/tmp/avp_state.$$.${RULE_PREF}.tmp"
+  if [ -f "$STATE_FILE" ]; then
+    cp -f "$STATE_FILE" "$STATE_MEM_FILE" 2>/dev/null || : >"$STATE_MEM_FILE"
+  else
+    : >"$STATE_MEM_FILE" 2>/dev/null || :
+  fi
+  chmod 0600 "$STATE_MEM_FILE" 2>/dev/null || :
+}
+
+state_flush_device() {
+  [ -n "${STATE_MEM_FILE:-}" ] || return 0
+  state_write_file "$STATE_FILE" <"$STATE_MEM_FILE" 2>/dev/null || :
+  rm -f "$STATE_MEM_FILE" 2>/dev/null || :
+  STATE_MEM_FILE=""
+}
+
 get_state() {
   # semantica: ultima ocorrencia vence ("last wins")
-  awk -F= -v k="$1" '$1==k{v=substr($0,index($0,"=")+1)} END{print v}' "$STATE_FILE" 2>/dev/null
+  _sf="$(state_store_file)"
+  awk -F= -v k="$1" '$1==k{v=substr($0,index($0,"=")+1)} END{print v}' "$_sf" 2>/dev/null
 }
 set_state() {
   KEY="$1"; VAL="$2"
+  _sf="$(state_store_file)"
+  _tmp="${_sf}.w.$$"
   {
-    if [ -f "$STATE_FILE" ]; then
-      # remove entradas antigas do KEY (awk-only) e preserva o resto
-      awk -F= -v k="$KEY" '$1!=k{print}' "$STATE_FILE" 2>/dev/null || true
+    if [ -f "$_sf" ]; then
+      awk -F= -v k="$KEY" '$1!=k{print}' "$_sf" 2>/dev/null || true
     fi
-    printf "%s=%s\\n" "$KEY" "$VAL"
-  } | state_write_file "$STATE_FILE" 2>/dev/null || :
+    printf "%s=%s\n" "$KEY" "$VAL"
+  } >"$_tmp" 2>/dev/null || :
+  mv -f "$_tmp" "$_sf" 2>/dev/null || rm -f "$_tmp" 2>/dev/null || :
 }
 
 cooldown_ok() {
@@ -302,34 +333,41 @@ handshake_age() {
   echo $(( $(epoch) - MAXE ))
 }
 
+ping_parse_stats() {
+  awk '
+    /packet loss/ {
+      if (match($0, /([0-9]+)% packet loss/, m)) loss=m[1]
+    }
+    /round-trip|rtt/ {
+      split($0, a, "=")
+      if (length(a) > 1) {
+        gsub(/ /, "", a[2]); gsub(/ms/, "", a[2])
+        split(a[2], r, "/")
+        if (r[1] != "" && r[2] != "" && r[3] != "") {
+          min=r[1]; avg=r[2]; max=r[3]
+        }
+      }
+    }
+    END {
+      if (loss == "") exit 1
+      if (avg == "") { print loss; exit 2 }
+      print loss, min, avg, max
+    }
+  '
+}
+
 ping_stats_iface() {
   IFACE="$1"; DST="$2"
   OUT="$(ping -I "$IFACE" -c "$PINGCOUNT" -W "$PINGW" "$DST" 2>/dev/null)" || return 1
-  LOSS="$(echo "$OUT" | sed -n 's/.* \([0-9]\+\)% packet loss.*/\1/p' | head -n1)"
-  [ -z "$LOSS" ] && return 1
-  RTT_LINE="$(echo "$OUT" | awk '/round-trip|rtt/ {print; exit}')"
-  RTT="$(echo "$RTT_LINE" | awk -F'=' '{print $2}' | tr -d ' ' | sed 's/ms//g')"
-  [ -z "$RTT" ] && return 2
-  MIN="$(echo "$RTT" | awk -F'/' '{print $1}')"
-  AVG="$(echo "$RTT" | awk -F'/' '{print $2}')"
-  MAX="$(echo "$RTT" | awk -F'/' '{print $3}')"
-  [ -z "$AVG" ] && return 2
-  echo "$LOSS $MIN $AVG $MAX"
+  PARSED="$(printf "%s\n" "$OUT" | ping_parse_stats)" || return $?
+  echo "$PARSED"
 }
 
 ping_stats_default() {
   DST="$1"
   OUT="$(ping -c "$PINGCOUNT" -W "$PINGW" "$DST" 2>/dev/null)" || return 1
-  LOSS="$(echo "$OUT" | sed -n 's/.* \([0-9]\+\)% packet loss.*/\1/p' | head -n1)"
-  [ -z "$LOSS" ] && return 1
-  RTT_LINE="$(echo "$OUT" | awk '/round-trip|rtt/ {print; exit}')"
-  RTT="$(echo "$RTT_LINE" | awk -F'=' '{print $2}' | tr -d ' ' | sed 's/ms//g')"
-  [ -z "$RTT" ] && return 2
-  MIN="$(echo "$RTT" | awk -F'/' '{print $1}')"
-  AVG="$(echo "$RTT" | awk -F'/' '{print $2}')"
-  MAX="$(echo "$RTT" | awk -F'/' '{print $3}')"
-  [ -z "$AVG" ] && return 2
-  echo "$LOSS $MIN $AVG $MAX"
+  PARSED="$(printf "%s\n" "$OUT" | ping_parse_stats)" || return $?
+  echo "$PARSED"
 }
 
 make_key() { echo "$1" | sed 's/[^A-Za-z0-9_]/_/g'; }
@@ -491,6 +529,24 @@ score_wan_with_if() {
     echo "$SCORE ok wan_if=default jitter=$JIT avg=$AVGMEAN target=$T_SEL"
   fi
 }
+
+warm_metrics_cycle() {
+  # Pré-aquece métricas globais do ciclo (reaproveitadas por todos os devices)
+  WAN_IF_CYCLE="$(detect_wan_if)"
+  set_cache WAN IFACE "$WAN_IF_CYCLE"
+
+  WAN_RES_CYCLE="$(score_wan_with_if "$WAN_IF_CYCLE")"
+  set_cache WAN RES "$WAN_RES_CYCLE"
+  set_cache WAN SCORE "$(echo "$WAN_RES_CYCLE" | awk '{print $1}')"
+  set_cache WAN META  "$(echo "$WAN_RES_CYCLE" | cut -d' ' -f2-)"
+
+  for WG in $WGS; do
+    RES="$(score_iface "$WG")"
+    set_cache VPN_SCORE "$WG" "$(echo "$RES" | awk '{print $1}')"
+    set_cache VPN_META  "$WG" "$(echo "$RES" | cut -d' ' -f2-)"
+  done
+}
+
 # ---------- ROUTING ----------
 current_device_table() {
   ip rule show | awk -v ip="$DEVICE_IP" -v pref="$RULE_PREF" \
@@ -585,6 +641,7 @@ run_device() {
   # Contexto esperado (setado no loop): DEVICE_LABEL, DEVICE_IP, RULE_PREF, STATE_FILE
   echo "-------------------------------"
   echo "[DEVICE] $DEVICE_LABEL  ip=$DEVICE_IP  pref=$RULE_PREF  state=$STATE_FILE"
+  state_begin_device
   CUR_RAW="$(current_device_table)"
   CUR="$CUR_RAW"; [ -z "$CUR_RAW" ] && CUR="(none)"
 
@@ -632,11 +689,15 @@ run_device() {
   KEEP_IF=""
 
   for WG in $WGS; do
-    RES="$(score_iface "$WG")"
-    SCORE="$(echo "$RES" | awk '{print $1}')"
-    META="$(echo "$RES" | cut -d' ' -f2-)"
-    set_cache "VPN_SCORE" "$WG" "$SCORE"
-    set_cache "VPN_META"  "$WG" "$META"
+    SCORE="$(get_cache VPN_SCORE "$WG")"
+    META="$(get_cache VPN_META "$WG")"
+    if [ -z "${SCORE:-}" ] || [ -z "${META:-}" ]; then
+      RES="$(score_iface "$WG")"
+      SCORE="$(echo "$RES" | awk '{print $1}')"
+      META="$(echo "$RES" | cut -d' ' -f2-)"
+      set_cache "VPN_SCORE" "$WG" "$SCORE"
+      set_cache "VPN_META"  "$WG" "$META"
+    fi
 
     AVOID_UNTIL="$(get_state q_avoid_until_${WG})"; [ -z "${AVOID_UNTIL:-}" ] && AVOID_UNTIL=0
     BADRUNS="$(get_state q_bad_degrade_${WG})";    [ -z "${BADRUNS:-}" ] && BADRUNS=0
@@ -785,10 +846,20 @@ run_device() {
 
   # ===== WAN snapshot =====
 
-  WAN_IF="$(detect_wan_if)"
-  WAN_RES="$(score_wan_with_if "$WAN_IF")"
-  WAN_SCORE="$(echo "$WAN_RES" | awk '{print $1}')"
-  WAN_META="$(echo "$WAN_RES" | cut -d' ' -f2-)"
+  WAN_IF="$(get_cache WAN IFACE)"
+  WAN_RES="$(get_cache WAN RES)"
+  WAN_SCORE="$(get_cache WAN SCORE)"
+  WAN_META="$(get_cache WAN META)"
+  if [ -z "${WAN_SCORE:-}" ] || [ -z "${WAN_META:-}" ]; then
+    WAN_IF="$(detect_wan_if)"
+    WAN_RES="$(score_wan_with_if "$WAN_IF")"
+    WAN_SCORE="$(echo "$WAN_RES" | awk '{print $1}')"
+    WAN_META="$(echo "$WAN_RES" | cut -d' ' -f2-)"
+    set_cache WAN IFACE "$WAN_IF"
+    set_cache WAN RES "$WAN_RES"
+    set_cache WAN SCORE "$WAN_SCORE"
+    set_cache WAN META "$WAN_META"
+  fi
   echo "[WAN] score=$WAN_SCORE  $WAN_META"
 
   # ===== CUR snapshot =====
@@ -1029,6 +1100,7 @@ fi
     echo "[SUMMARY] $DEVICE_LABEL via WAN | best=${BEST_IF:-none}(${BEST_SCORE:-INF}) | wan=${WAN_SCORE:-INF}"
   fi
 
+  state_flush_device
 }
 
 set_rc() {
@@ -1130,6 +1202,8 @@ fi
 DEV_LABELS="$(printf '%b' "$DEVICES_LIST" | awk -F'|' 'NF>=1 && $1!="" { s=(s ? s", " : "") $1 } END{ print s }')"
 echo "Devices   : ${DEV_LABELS:-?}"
 print_devices_header "devices.conf ($DEVICES_CONF)"
+
+warm_metrics_cycle
 
 # Ordem de execução segue DEVICES_LIST
 #

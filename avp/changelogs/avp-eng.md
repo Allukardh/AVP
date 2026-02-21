@@ -1,3 +1,17 @@
+## v1.2.44 (2026-02-21)
+- FIX: corrige `printf "%s\n"` no parser de ping para newline real.
+- FIX: remove `trap ... EXIT` no `run_device` (não protegia `return` de função e podia induzir leitura errada do fluxo).
+
+## v1.2.43 (2026-02-21)
+- FIX: hotfix intermediário do parser de ping (ajuste de `printf` no pipeline para `ping_parse_stats`).
+- SAFETY: tentativa de flush defensivo do state no `run_device` (substituída no ajuste final v1.2.44).
+
+## v1.2.42 (2026-02-21)
+- PERF: pré-aquecimento de métricas WAN/WG por ciclo (reuso para todos os devices).
+- PERF: state por device em `/tmp` (cache temporário) com flush único no fim do device.
+- PERF: reduz `PINGCOUNT` padrão de 10 para 3 (loop operacional mais leve).
+- PERF: consolida parsing do ping em uma função awk (`ping_parse_stats`), reduzindo subprocessos.
+
 # CHANGELOG — AVP-ENG
 
 ## v1.2.41 (2026-02-20)
