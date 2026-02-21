@@ -1,4 +1,8 @@
-# AVP-META
+# CHANGELOG — AVP-META
+
+## v1.0.4 (2026-02-21)
+
+- POLISH: write_changelog_md agora normaliza automaticamente o corpo do changelog externo (.md): CRLF/LF, trailing spaces, blank lines e bullets simples
 
 ## v1.0.3 (2026-02-21)
 

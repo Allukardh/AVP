@@ -4,11 +4,11 @@
 # Component : AVP-META
 # File      : avp-meta.sh
 # Role      : Metadata governor (header/changelog/SCRIPT_VER)
-# Version   : v1.0.3 (2026-02-21)
+# Version   : v1.0.4 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.3"
+SCRIPT_VER="v1.0.4"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -199,13 +199,58 @@ apply_entry_into_changelog_md(){
   fi
 }
 
+normalize_changelog_md_body(){
+  in="$1"; out="$2"
+  awk '
+    {
+      sub(/\r$/, "")
+      sub(/[ \t]+$/, "")
+      if ($0 ~ /^\* /) sub(/^\* /, "- ")
+      lines[NR]=$0
+    }
+    END{
+      start=1
+      while (start<=NR && lines[start]=="") start++
+      end=NR
+      while (end>=start && lines[end]=="") end--
+
+      blank=0
+      for (i=start; i<=end; i++) {
+        if (lines[i] == "") {
+          if (blank) continue
+          blank=1
+          print ""
+        } else {
+          blank=0
+          print lines[i]
+        }
+      }
+    }
+  ' "$in" > "$out" || return 1
+}
+
 write_changelog_md(){
   md="$1"; component="$2"; body="$3"
+  norm="${md}.norm.$$"
   mkdir -p "$(dirname "$md")" || return 1
+
+  normalize_changelog_md_body "$body" "$norm" || {
+    rm -f "$norm" 2>/dev/null || true
+    return 1
+  }
+
   {
-    md_title_for_component "$component"
-    [ -s "$body" ] && cat "$body"
-  } > "$md"
+    printf '# CHANGELOG — %s\n' "$component"
+    printf '\n'
+    [ -s "$norm" ] && cat "$norm"
+    printf '\n'
+  } > "${md}.tmp" || {
+    rm -f "$norm" "${md}.tmp" 2>/dev/null || true
+    return 1
+  }
+
+  rm -f "$norm" 2>/dev/null || true
+  mv "${md}.tmp" "$md" || return 1
 }
 
 extract_changelog_lines(){
