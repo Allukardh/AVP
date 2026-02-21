@@ -4,11 +4,11 @@
 # Component : AVP-CLI
 # File      : avp-cli.sh
 # Role      : Machine-readable status for WebUI/automation (JSON canon + KV fallback)
-# Version   : v1.0.19 (2026-02-20)
+# Version   : v1.0.21 (2026-02-21)
 # Status    : C1 (initial)
 # =============================================================
 
-SCRIPT_VER="v1.0.19"
+SCRIPT_VER="v1.0.21"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -20,7 +20,7 @@ POLICY_DIR="${AVP_ROOT}/avp/policy"
 STATE_DIR="${AVP_ROOT}/avp/state"
 
 GLOBAL_CONF="$POLICY_DIR/global.conf"
-DEVICES_CONF="$POLICY_DIR/devices.conf"
+AVP_POL_BIN="${AVP_ROOT}/avp/bin/avp-pol.sh"
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 warn() { printf "%s\n" "$*" >&2; }
@@ -44,7 +44,7 @@ err_meta() {
     global.conf_missing) echo "WARN|crie $GLOBAL_CONF";;
     global.enabled_invalid) echo "WARN|verifique AUTOVPN_ENABLED em $GLOBAL_CONF";;
     global.profile_invalid) echo "WARN|verifique AUTOVPN_PROFILE em $GLOBAL_CONF";;
-    devices.conf_missing) echo "WARN|crie $DEVICES_CONF";;
+    ssot.unavailable) echo "ERR|verifique SSOT: $AVP_POL_BIN device ssot";;
     cli.unknown_flag) echo "ERR|use: $0 status [--json|--pretty|--kv]";;
     cli.unknown_command) echo "ERR|use: $0 status [--json|--pretty|--kv]";;
     *) echo "ERR|verifique logs e configs";;
@@ -117,20 +117,34 @@ load_global() {
   esac
 }
 
-# Load devices from devices.conf (LABEL IP PREF ...)
-load_devices_from_conf() {
+# Load devices from SSOT (VPN Director via AVP-POL)
+# DEVICES_LIST lines:
+#   LABEL|IP|PREF|STATEFILE|SLUG|ENABLED|IFACE_BASE|MAC
+load_devices_from_ssot() {
   DEVICES_LIST=""
 
-  if [ ! -f "$DEVICES_CONF" ]; then
-    add_err "devices.conf_missing"
-    warn "[WARN] devices.conf missing: $DEVICES_CONF (devices=[])"
-    return 0
+  if [ ! -x "$AVP_POL_BIN" ]; then
+    add_err "ssot.unavailable"
+    warn "[ERR] AVP-POL not executable: $AVP_POL_BIN"
+    return 1
   fi
 
-  while read -r LABEL IP PREF _rest || [ -n "${LABEL:-}" ]; do
-    LABEL="$(printf "%s" "$LABEL" | tr -d '\r')"
-    IP="$(printf "%s" "$IP" | tr -d '\r')"
-    PREF="$(printf "%s" "$PREF" | tr -d '\r')"
+  _ssot="$("$AVP_POL_BIN" device ssot 2>/dev/null || true)"
+  if [ -z "${_ssot:-}" ]; then
+    add_err "ssot.unavailable"
+    warn "[ERR] SSOT unavailable via AVP-POL (sem fallback para devices.conf)"
+    return 1
+  fi
+
+  _tmp="/tmp/avp_cli_ssot.$$"
+  printf "%s\n" "$_ssot" >"$_tmp" 2>/dev/null || return 1
+
+  while IFS='|' read -r EN LABEL IP IFACE_BASE MAC || [ -n "${LABEL:-}" ]; do
+    EN="$(printf "%s" "${EN:-}" | tr -d '\r')"
+    LABEL="$(printf "%s" "${LABEL:-}" | tr -d '\r')"
+    IP="$(printf "%s" "${IP:-}" | tr -d '\r')"
+    IFACE_BASE="$(printf "%s" "${IFACE_BASE:-}" | tr -d '\r')"
+    MAC="$(printf "%s" "${MAC:-}" | tr -d '\r')"
 
     [ -z "${LABEL:-}" ] && continue
     case "$LABEL" in \#*) continue ;; esac
@@ -138,12 +152,20 @@ load_devices_from_conf() {
     SL="$(sanitize_label "$LABEL")"
     SF="${STATE_DIR}/avp_${SL}.state"
 
-    if [ -z "${DEVICES_LIST:-}" ]; then
-      DEVICES_LIST="${LABEL}|${IP}|${PREF}|${SF}|${SL}\n"
-    else
-      DEVICES_LIST="${DEVICES_LIST}${LABEL}|${IP}|${PREF}|${SF}|${SL}\n"
-    fi
-  done <"$DEVICES_CONF"
+    # PREF no CLI é informativo; tenta ler o pref atual do kernel por IP
+    PREF="$(ip rule show 2>/dev/null | awk -v ip="$IP" '
+      $0 ~ ("from " ip) {
+        p=$1; sub(/:$/, "", p)
+        if (p ~ /^[0-9]+$/) { print p; exit }
+      }'
+    )"
+    [ -z "${PREF:-}" ] && PREF=""
+
+    DEVICES_LIST="${DEVICES_LIST}${LABEL}|${IP}|${PREF}|${SF}|${SL}|${EN}|${IFACE_BASE}|${MAC}\n"
+  done <"$_tmp"
+
+  rm -f "$_tmp" 2>/dev/null || :
+  return 0
 }
 
 build_json_status() {
@@ -159,14 +181,17 @@ build_json_status() {
   printf "%b" "${DEVICES_LIST:-}" >"$_tmp" 2>/dev/null || :
 
   if [ -s "$_tmp" ]; then
-    while IFS='|' read -r L I P S SL || [ -n "${L:-}" ]; do
+    while IFS='|' read -r L I P S SL EN IFACE MAC || [ -n "${L:-}" ]; do
       [ -z "${L:-}" ] && continue
 
       mode="$(get_state_kv "$S" "dev_mode")"; [ -z "${mode:-}" ] && mode="unknown"
       table="$(get_state_kv "$S" "last_real_table")"
       lse="$(get_state_kv "$S" "last_switch_epoch")"; [ -z "${lse:-}" ] && lse=""
 
+      [ -z "${EN:-}" ] && EN="1"
+      [ -z "${IFACE:-}" ] && IFACE="wan"
       obj="{\"label\":\"$(json_escape "$L")\",\"ip\":\"$(json_escape "$I")\",\"pref\":\"$(json_escape "$P")\","
+      obj="${obj}\"enabled\":${EN},\"iface_base\":\"$(json_escape "${IFACE:-}")\",\"mac\":\"$(json_escape "${MAC:-}")\","
       obj="${obj}\"state\":\"$(json_escape "$mode")\",\"route\":\"$(json_escape "${table:-}")\",\"table\":\"$(json_escape "${table:-}")\","
       obj="${obj}\"last_switch_epoch\":\"$(json_escape "${lse:-}")\"}"
 
@@ -224,7 +249,7 @@ build_kv_status() {
   printf "%b" "${DEVICES_LIST:-}" >"$_tmp" 2>/dev/null || :
 
   if [ -s "$_tmp" ]; then
-    while IFS='|' read -r L I P S SL || [ -n "${L:-}" ]; do
+    while IFS='|' read -r L I P S SL EN IFACE MAC || [ -n "${L:-}" ]; do
       [ -z "${L:-}" ] && continue
 
       mode="$(get_state_kv "$S" "dev_mode")"; [ -z "${mode:-}" ] && mode="unknown"
@@ -234,6 +259,9 @@ build_kv_status() {
       printf "device_%s_label=%s\n" "$SL" "$L"
       printf "device_%s_ip=%s\n" "$SL" "$I"
       printf "device_%s_pref=%s\n" "$SL" "$P"
+      printf "device_%s_enabled=%s\n" "$SL" "${EN:-1}"
+      printf "device_%s_iface_base=%s\n" "$SL" "${IFACE:-}"
+      printf "device_%s_mac=%s\n" "$SL" "${MAC:-}"
       printf "device_%s_state=%s\n" "$SL" "$mode"
       printf "device_%s_table=%s\n" "$SL" "${table:-}"
       printf "device_%s_route=%s\n" "$SL" "${table:-}"
@@ -264,7 +292,7 @@ cmd_status() {
   mode="${1:-}"
 
   load_global
-  load_devices_from_conf
+  load_devices_from_ssot || return 20
 
   case "$mode" in
     ""|"--json" ) build_json_status; return 0 ;;

@@ -1,5 +1,15 @@
 # CHANGELOG — AVP-CLI
 
+## v1.0.21 (2026-02-21)
+- CHG: remove legado morto `DEVICES_CONF` do AVP-CLI (CLI agora é SSOT-only via `avp-pol.sh device ssot`)
+- CHG: remove `err_meta(devices.conf_missing)` sem uso (resíduo do fluxo antigo)
+- SAFE: sem alteração de contrato JSON/KV; higiene interna pós-fase-5
+
+## v1.0.20 (2026-02-21)
+- FEAT: AVP-CLI passa a consumir inventário SSOT do VPN Director via `avp-pol.sh device ssot` (sem `devices.conf`)
+- FEAT: payload JSON/KV inclui `enabled`, `iface_base` e `mac` por device (alinha WebUI à SSOT)
+- SAFE: em falha de SSOT, CLI retorna erro explícito (sem fallback silencioso)
+
 ## v1.0.19 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-cli.md
 - CHG: remove bloco CHANGELOG embutido do script
