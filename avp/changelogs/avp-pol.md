@@ -1,3 +1,8 @@
+## v1.3.27 (2026-02-21)
+- FIX: restaura contrato de `CRITICAL_VARS` no AVP-POL (fallbacks canônicos dos campos core voltam a ser aplicados).
+- FIX: completa bloco `[balanced]` no template `ensure_profiles_conf()` com `PINGCOUNT`, `PINGW` e `TARGETS`.
+- SAFE: mantém tunáveis do ENG via `profiles.conf` alinhados com defaults e template interno.
+
 ## v1.3.26 (2026-02-21)
 - FIX: remove variáveis globais indevidas (`PINGCOUNT`, `PINGW`, `TARGETS`) do topo do AVP-POL.
 - SAFE: mantém somente defaults canônicos `DEF_PINGCOUNT`, `DEF_PINGW`, `DEF_TARGETS` e export via `apply_profile_exports`.

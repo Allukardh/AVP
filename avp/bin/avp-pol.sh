@@ -4,11 +4,11 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.26 (2026-02-21)
+# Version   : v1.3.27 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.3.26"
+SCRIPT_VER="v1.3.27"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -38,7 +38,7 @@ POL_LOCK_HELD=0
 POL_LOCK_TRAP_SET=0
 
 DEFAULT_PROFILE="balanced"
-CRITICAL_VARS="AVP_LOGDIR AVP_LOGDIR_POLICY AVP_LOGDIR_ENG AVP_LOGDIR_DIAG"
+CRITICAL_VARS="AVP_LOGDIR AVP_LOGFILE AVP_STATEDIR AVP_STATUSFILE AVP_LASTRUNFILE COOLDOWN_SEC WAN_STABLE_RUNS VPN_BACK_STABLE_RUNS WAN_ADVANTAGE_MS VPN_BACK_MARGIN_MS RETURN_DELAY_SEC RETURN_MARGIN_MS RETURN_STABLE_RUNS QUAR_DEGRADE_SCORE QUAR_DEGRADE_RUNS QUAR_AVOID_SEC"
 CRITICAL_VARS="${CRITICAL_VARS} AVP_ERRORS_LOG AVP_EVENTS_LOG AVP_GUI_APPLY_STATE"
 DEF_COOLDOWN_SEC=600
 DEF_WAN_STABLE_RUNS=3
