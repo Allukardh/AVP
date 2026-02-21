@@ -1,4 +1,10 @@
-# CHANGELOG — avp-eng
+# CHANGELOG — AVP-ENG
+
+## v1.2.45 (2026-02-21)
+- FEAT: AVP-ENG passa a consumir inventário SSOT do VPN Director via `avp-pol.sh device ssot` (sem `devices.conf`)
+- FEAT: devices `enabled=0` na SSOT agora são ignorados pelo engine e têm limpeza de resíduos `ip rule` por IP
+- SAFE: `pref` temporário nesta fase reaproveita `pref` existente por IP ou aloca base `11210 + índice` (prefmap por MAC fica para a próxima fase)
+- FIX: evita subshell em load_devices_from_ssot (pipe|while), preservando DEVICES_LIST no BusyBox /bin/sh
 
 ## v1.2.44 (2026-02-21)
 - FIX: corrige `printf "%s\n"` no parser de ping para newline real.

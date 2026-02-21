@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.44 (2026-02-21)
+# Version   : v1.2.45 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.2.44"
+SCRIPT_VER="v1.2.45"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -47,6 +47,8 @@ mkdir -p "$LOGDIR" 2>/dev/null || { LOGDIR="/tmp/avp_logs"; mkdir -p "$LOGDIR" 2
 
 # Policy integration (devices inventory)
 DEVICES_CONF="/jffs/scripts/avp/policy/devices.conf"
+AVP_POL_BIN="/jffs/scripts/avp/bin/avp-pol.sh"
+RULE_PREF_BASE=11210
 
 # (RULE_PREF e STATE_FILE são selecionados por device em runtime)
 RULE_PREF=""
@@ -600,30 +602,76 @@ sanitize_label() {
   echo "$OUT"
 }
 
-load_devices_from_conf() {
-  # Popula DEVICES_LIST com linhas: LABEL|IP|PREF|STATEFILE
-  DEVICES_LIST=""
-  [ -f "$DEVICES_CONF" ] || return 1
+current_pref_for_ip_any() {
+  _ip="$1"
+  [ -n "${_ip:-}" ] || return 1
+  ip rule show 2>/dev/null | awk -v ip="$_ip" '
+    $0 ~ ("from " ip) {
+      p=$1
+      sub(/:$/, "", p)
+      if (p ~ /^[0-9]+$/) { print p; exit }
+    }
+  '
+}
 
-  while read -r LABEL IP PREF _ || [ -n "$LABEL" ]; do
-    # CRLF-safe (Notepad++/Windows) — strip \r
-    LABEL="$(printf \"%s\" \"$LABEL\" | tr -d \"\\r\")"
-    IP="$(printf \"%s\" \"$IP\" | tr -d \"\\r\")"
-    PREF="$(printf \"%s\" \"$PREF\" | tr -d \"\\r\")"
+cleanup_rules_for_ip_anypref() {
+  _ip="$1"
+  [ -n "${_ip:-}" ] || return 0
+  _prefs="$(ip rule show 2>/dev/null | awk -v ip="$_ip" '
+    $0 ~ ("from " ip) {
+      p=$1
+      sub(/:$/, "", p)
+      if (p ~ /^[0-9]+$/) print p
+    }
+  ' | awk '!seen[$0]++')"
+  [ -z "${_prefs:-}" ] && return 0
+  echo "$_prefs" | while read -r _p; do
+    [ -n "${_p:-}" ] || continue
+    ip rule del pref "$_p" 2>/dev/null || true
+  done
+}
+
+load_devices_from_ssot() {
+  # Popula DEVICES_LIST com linhas:
+  # LABEL|IP|PREF|STATEFILE|ENABLED|IFACE_BASE|MAC
+  DEVICES_LIST=""
+
+  [ -x "$AVP_POL_BIN" ] || return 1
+
+  _ssot="$("$AVP_POL_BIN" device ssot 2>/dev/null || true)"
+  [ -n "${_ssot:-}" ] || return 1
+
+  _idx=0
+  _ssot_tmp="/tmp/avp_eng_ssot.$$"
+  printf "%s\n" "$_ssot" >"$_ssot_tmp" 2>/dev/null || return 1
+
+  while IFS='|' read -r EN LABEL IP IFACE_BASE MAC || [ -n "${LABEL:-}" ]; do
+    EN="$(printf "%s" "${EN:-}" | tr -d "\r")"
+    LABEL="$(printf "%s" "${LABEL:-}" | tr -d "\r")"
+    IP="$(printf "%s" "${IP:-}" | tr -d "\r")"
+    IFACE_BASE="$(printf "%s" "${IFACE_BASE:-}" | tr -d "\r")"
+    MAC="$(printf "%s" "${MAC:-}" | tr -d "\r")"
 
     [ -z "${LABEL:-}" ] && continue
     case "$LABEL" in \#*) continue ;; esac
 
-    # valida IP e pref numérico
+    echo "$EN" | awk '($0=="0" || $0=="1"){ok=1} END{exit ok?0:1}' >/dev/null 2>&1 || continue
     echo "$IP" | awk -F. 'NF!=4{exit 1} {for(i=1;i<=4;i++) if($i<0||$i>255) exit 1} END{exit 0}' >/dev/null 2>&1 || continue
-    echo "$PREF" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1 || continue
+
+    _idx=$((_idx+1))
+    PREF="$(current_pref_for_ip_any "$IP" 2>/dev/null || true)"
+    if ! echo "${PREF:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
+      PREF=$((RULE_PREF_BASE + _idx))
+    fi
 
     SL="$(sanitize_label "$LABEL")"
     SF="$STATEDIR/avp_${SL}.state"
 
     # guarda \n literal (pra printf "%b" interpretar depois)
-    DEVICES_LIST="${DEVICES_LIST}${LABEL}|${IP}|${PREF}|${SF}\n"
-  done <"$DEVICES_CONF"
+    DEVICES_LIST="${DEVICES_LIST}${LABEL}|${IP}|${PREF}|${SF}|${EN}|${IFACE_BASE}|${MAC}\n"
+  done <"$_ssot_tmp"
+
+  rm -f "$_ssot_tmp" 2>/dev/null || :
 
   [ -n "$DEVICES_LIST" ] || return 1
   return 0
@@ -631,9 +679,14 @@ load_devices_from_conf() {
 
 print_devices_header() {
   echo "[DEVICES] source=$1"
-  printf "%b" "$DEVICES_LIST" | while IFS='|' read -r L I P S; do
+  printf "%b" "$DEVICES_LIST" | while IFS='|' read -r L I P S EN IFACE MAC; do
     [ -z "${L:-}" ] && continue
-    echo "  - $L: $I (pref $P) state=$S"
+    _flag="enabled"
+    [ "${EN:-1}" = "0" ] && _flag="disabled"
+    _if="${IFACE:-?}"
+    _mac="${MAC:-}"
+    [ -n "$_mac" ] && _mac=" mac=$_mac"
+    echo "  - $L: $I (pref $P) state=$S ssot=${_flag}:${_if}${_mac}"
   done
 }
 
@@ -1191,17 +1244,17 @@ echo "[CONFIG] quar_score=${QUAR_DEGRADE_SCORE} quar_runs=${QUAR_DEGRADE_RUNS} q
 cleanup_old_logs
 
 # ===== DEVICE LOOP =====
-# Fonte de verdade (obrigatória): devices.conf (Policy).
-if ! load_devices_from_conf; then
-  echo "[ERR] devices.conf obrigatório ausente/inválido: $DEVICES_CONF"
+# Fonte de verdade (obrigatória): SSOT do VPN Director via AVP-POL.
+if ! load_devices_from_ssot; then
+  echo "[ERR] SSOT do VPN Director indisponível/inválida (via AVP-POL)"
   echo "[ERR] Engine abortado para evitar comportamento imprevisível"
-  echo "[NEXT] verifique o arquivo: $DEVICES_CONF (formato: LABEL IP PREF; ao menos 1 linha válida)"
+  echo "[NEXT] teste: $AVP_POL_BIN device ssot"
   exit 20
 
 fi
 DEV_LABELS="$(printf '%b' "$DEVICES_LIST" | awk -F'|' 'NF>=1 && $1!="" { s=(s ? s", " : "") $1 } END{ print s }')"
 echo "Devices   : ${DEV_LABELS:-?}"
-print_devices_header "devices.conf ($DEVICES_CONF)"
+print_devices_header "ssot(vpndirector via avp-pol.sh device ssot)"
 
 warm_metrics_cycle
 
@@ -1216,8 +1269,17 @@ trap cleanup_all EXIT HUP INT TERM
 
 TMP_DEVLIST="/tmp/avp_eng.devices.$$"
 printf "%b" "$DEVICES_LIST" >"$TMP_DEVLIST"
-while IFS='|' read -r L I P S; do
+while IFS='|' read -r L I P S EN IFACE MAC; do
   [ -z "${L:-}" ] && continue
+
+  if [ "${EN:-1}" != "1" ]; then
+    echo "-------------------------------"
+    echo "[DEVICE] $L  ip=$I  pref=$P  state=$S"
+    echo "[SSOT] disabled (iface_base=${IFACE:-?} mac=${MAC:-}) -> skip manage + cleanup residual ip rule(s)"
+    cleanup_rules_for_ip_anypref "$I"
+    continue
+  fi
+
   DEVICE_LABEL="$L"
   DEVICE_IP="$I"
   RULE_PREF="$P"
