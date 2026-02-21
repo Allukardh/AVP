@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.46 (2026-02-21)
+# Version   : v1.2.47 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.2.46"
+SCRIPT_VER="v1.2.47"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -558,26 +558,27 @@ current_device_table() {
 
 apply_device_table() {
   TBL="$1"
-  ip rule del pref "$RULE_PREF" 2>/dev/null
-  if ! ip rule add pref "$RULE_PREF" from "$DEVICE_IP" lookup "$TBL" 2>/dev/null; then
-    echo "[ERR] code=30 apply_device_table failed (table=$TBL)"
-    echo "[NEXT] verifique ip rule/ip route; tabela=$TBL; pref=$RULE_PREF; rode: ip rule | grep \"pref $RULE_PREF\"; ip route show table $TBL"
-    set_rc 30
-    return 30
+  if ! reconcile_apply_lookup "$DEVICE_IP" "$RULE_PREF" "$TBL"; then
+    _rc=$?
+    echo "[ERR] code=${_rc} apply_device_table failed (table=$TBL)"
+    echo "[NEXT] verifique ip rule/ip route; tabela=$TBL; pref=$RULE_PREF; rode: ip rule | grep \"$DEVICE_IP\|$RULE_PREF\"; ip route show table $TBL"
+    set_rc "$_rc"
+    return "$_rc"
   fi
   echo "[OK] applied ip rule: lookup $TBL (pref $RULE_PREF from $DEVICE_IP)"
-  ip route flush cache 2>/dev/null
   set_state dev_mode vpn
   return 0
 }
 
 apply_wan_fallback() {
-  if ! ip rule del pref "$RULE_PREF" 2>/dev/null; then
-    # se já não existe, ok; se deu erro real, continua mesmo assim
-    :
+  if ! reconcile_apply_main "$DEVICE_IP" "$RULE_PREF"; then
+    _rc=$?
+    echo "[ERR] code=${_rc} apply_wan_fallback reconcile failed"
+    echo "[NEXT] verifique ip rule; rode: ip rule | grep \"$DEVICE_IP\|$RULE_PREF\""
+    set_rc "$_rc"
+    return "$_rc"
   fi
   echo "[OK] applied ip rule: lookup main (deleted pref $RULE_PREF; default routing)"
-  ip route flush cache 2>/dev/null
   set_state dev_mode wan
   return 0
 }
@@ -686,6 +687,75 @@ cleanup_rules_for_ip_anypref() {
     ip rule del pref "$_p" 2>/dev/null || true
   done
 }
+
+cleanup_rule_for_pref() {
+  _pref="$1"
+  echo "$_pref" | awk '($0 ~ /^[0-9]+$/){ok=1} END{exit ok?0:1}' >/dev/null 2>&1 || return 0
+  ip rule del pref "$_pref" 2>/dev/null || true
+}
+
+count_rules_for_ip_any() {
+  _ip="$1"
+  [ -n "${_ip:-}" ] || { echo 0; return 0; }
+  ip rule show 2>/dev/null | awk -v ip="$_ip" '
+    $0 ~ ("from " ip) { c++ }
+    END { print c+0 }
+  '
+}
+
+reconcile_apply_lookup() {
+  _ip="$1"
+  _pref="$2"
+  _tbl="$3"
+
+  echo "[RECON] purge pref=$_pref"
+  cleanup_rule_for_pref "$_pref"
+
+  echo "[RECON] purge from=$_ip"
+  cleanup_rules_for_ip_anypref "$_ip"
+
+  if ! ip rule add pref "$_pref" from "$_ip" lookup "$_tbl" 2>/dev/null; then
+    echo "[ERR] code=30 reconcile_apply_lookup failed (ip=$_ip pref=$_pref table=$_tbl)"
+    return 30
+  fi
+
+  _cnt="$(count_rules_for_ip_any "$_ip" 2>/dev/null || echo 0)"
+  _tbl_now="$(ip rule show 2>/dev/null | awk -v ip="$_ip" -v pref="$_pref" '
+    $1 ~ ("^" pref ":$") && $0 ~ ("from " ip) {
+      for(i=1;i<=NF;i++) if($i=="lookup"){ print $(i+1); exit }
+    }
+  ')"
+  if [ "${_cnt:-0}" != "1" ] || [ "${_tbl_now:-}" != "$_tbl" ]; then
+    echo "[ERR] code=31 reconcile_verify_lookup failed (ip=$_ip pref=$_pref want=$_tbl got=${_tbl_now:-?} cnt=${_cnt:-?})"
+    return 31
+  fi
+
+  echo "[RECON] final ok ip=$_ip pref=$_pref lookup=$_tbl"
+  ip route flush cache 2>/dev/null || true
+  return 0
+}
+
+reconcile_apply_main() {
+  _ip="$1"
+  _pref="$2"
+
+  echo "[RECON] purge pref=$_pref"
+  cleanup_rule_for_pref "$_pref"
+
+  echo "[RECON] purge from=$_ip"
+  cleanup_rules_for_ip_anypref "$_ip"
+
+  _cnt="$(count_rules_for_ip_any "$_ip" 2>/dev/null || echo 0)"
+  if [ "${_cnt:-0}" != "0" ]; then
+    echo "[ERR] code=32 reconcile_verify_main failed (ip=$_ip cnt=${_cnt:-?})"
+    return 32
+  fi
+
+  echo "[RECON] final ok ip=$_ip -> main(default/no rule)"
+  ip route flush cache 2>/dev/null || true
+  return 0
+}
+
 
 load_devices_from_ssot() {
   # Popula DEVICES_LIST com linhas:
@@ -1350,8 +1420,14 @@ while IFS='|' read -r L I P S EN IFACE MAC; do
   if [ "${EN:-1}" != "1" ]; then
     echo "-------------------------------"
     echo "[DEVICE] $L  ip=$I  pref=$P  state=$S"
-    echo "[SSOT] disabled (iface_base=${IFACE:-?} mac=${MAC:-}) -> skip manage + cleanup residual ip rule(s)"
+    echo "[SSOT] disabled (iface_base=${IFACE:-?} mac=${MAC:-}) -> skip manage + reconcile cleanup"
+    echo "[RECON] disabled purge pref=$P"
+    cleanup_rule_for_pref "$P"
+    echo "[RECON] disabled purge from=$I"
     cleanup_rules_for_ip_anypref "$I"
+    ip route flush cache 2>/dev/null || true
+    _left="$(count_rules_for_ip_any "$I" 2>/dev/null || echo 0)"
+    echo "[RECON] disabled final ip=$I rules_left=${_left:-?}"
     continue
   fi
 

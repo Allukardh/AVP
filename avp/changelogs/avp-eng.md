@@ -1,5 +1,9 @@
 # CHANGELOG — AVP-ENG
 
+## v1.2.47 (2026-02-21)
+- FEAT: Fase 4 de reconciliação operacional no AVP-ENG (`ip rule`) com purge por `pref` + `from IP` antes de aplicar regra final
+- FEAT: validação explícita do estado final no kernel (lookup esperado para VPN e ausência de regra para WAN/disabled)
+- UX: logs `[RECON]` adicionados para auditoria clara da reconciliação por device
 ## v1.2.46 (2026-02-21)
 - FEAT: adiciona `prefmap.db` em `/jffs/scripts/avp/state/` para persistir `MAC -> pref` no AVP-ENG
 - FEAT: alocação de `pref` agora prioriza prefmap por MAC, depois reaproveita `ip rule`, e por fim aloca próximo livre >= `11210`
