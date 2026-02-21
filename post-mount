@@ -4,7 +4,7 @@
 # Component : AVP-BOOT
 # File      : post-mount
 # Role      : post-mount helper (delegate Entware mount to AMTM)
-# Version : v1.0.9 (2026-02-20)
+# Version   : v1.0.9 (2026-02-20)
 # Status    : stable
 # =============================================================
 

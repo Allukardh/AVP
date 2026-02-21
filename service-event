@@ -4,7 +4,7 @@
 # Component : AVP-WEBUI
 # File      : service-event
 # Role      : Firmware hook for WebUI Console actions (rc_service -> avp-action.sh)
-# Version : v1.0.6 (2026-02-20)
+# Version   : v1.0.6 (2026-02-20)
 # Status    : stable
 # =============================================================
 

@@ -1,11 +1,12 @@
 #!/bin/sh
 # =============================================================
-# Component : AVP-TOOLS
+# AutoVPN Platform (AVP)
+# Component : AVP-TAG
 # File      : avp-tag.sh
 # Role      : Git tag helper (rel/* stable, ck/* checkpoints)
-# Version : v1.0.7 (2026-02-20)
+# Version   : v1.0.7 (2026-02-20)
 # Status    : stable
-# -------------------------------------------------------------
+# =============================================================
 
 SCRIPT_VER="v1.0.7"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"

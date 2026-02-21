@@ -3,7 +3,8 @@
 # AutoVPN Platform (AVP)
 # Component : AVP-BOOT
 # File      : services-start
-# Version : v1.1.26 (2026-02-20)
+# Role      : Firmware boot hook (AVP startup orchestration + cron/webui-feed)
+# Version   : v1.1.26 (2026-02-20)
 # Status    : stable
 # =============================================================
 

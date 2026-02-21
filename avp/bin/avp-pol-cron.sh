@@ -9,6 +9,8 @@
 # =============================================================
 
 SCRIPT_VER="v1.0.23"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+hash -r 2>/dev/null || true
 set -u
 
 SELF_VER="$SCRIPT_VER"

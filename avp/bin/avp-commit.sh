@@ -4,11 +4,13 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version : v1.0.12 (2026-02-20)
+# Version   : v1.0.12 (2026-02-20)
 # Status    : stable
 # =============================================================
 
 SCRIPT_VER="v1.0.12"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+hash -r 2>/dev/null || true
 set -u
 
 ALLOW_MULTI=0

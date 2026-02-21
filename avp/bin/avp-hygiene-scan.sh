@@ -1,14 +1,16 @@
 #!/bin/sh
-# ============================================================
+# =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-HYGIENE
 # File      : avp-hygiene-scan.sh
 # Role      : Scan scripts for hygiene candidates (NO changes)
-# Status    : stable
 # Version   : v1.0.2 (2026-02-20)
-# ============================================================
+# Status    : stable
+# =============================================================
 
 SCRIPT_VER="v1.0.2"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+hash -r 2>/dev/null || true
 set -u
 
 ts(){ date '+%Y-%m-%d %H:%M:%S'; }

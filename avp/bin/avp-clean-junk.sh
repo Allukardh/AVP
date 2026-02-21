@@ -1,14 +1,16 @@
 #!/bin/sh
-# ============================================================
+# =============================================================
 # AutoVPN Platform (AVP)
 # Component : AVP-CLEAN
 # File      : avp-clean-junk.sh
 # Role      : Safe cleanup of common untracked junk (dry-run default)
-# Status    : stable
 # Version   : v1.0.1 (2026-02-20)
-# ============================================================
+# Status    : stable
+# =============================================================
 
 SCRIPT_VER="v1.0.1"
+export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
+hash -r 2>/dev/null || true
 set -u
 
 ts(){ date '+%Y-%m-%d %H:%M:%S'; }
