@@ -1,3 +1,13 @@
+## v1.3.26 (2026-02-21)
+- FIX: remove variáveis globais indevidas (`PINGCOUNT`, `PINGW`, `TARGETS`) do topo do AVP-POL.
+- SAFE: mantém somente defaults canônicos `DEF_PINGCOUNT`, `DEF_PINGW`, `DEF_TARGETS` e export via `apply_profile_exports`.
+
+## v1.3.25 (2026-02-21)
+- FEAT: profiles.conf agora suporta tunáveis de métricas do ENG (`PINGCOUNT`, `PINGW`, `TARGETS`).
+- FEAT: AVP-POL valida e exporta `PINGCOUNT`, `PINGW` e `TARGETS` para o AVP-ENG.
+- SAFE: fallback canônico em valores inválidos (`DEF_PINGCOUNT`, `DEF_PINGW`, `DEF_TARGETS`).
+- UX: template interno de `ensure_profiles_conf` atualizado com os novos campos (prepara integração com GUI/API).
+
 # CHANGELOG — AVP-POL
 
 ## v1.3.24 (2026-02-20)

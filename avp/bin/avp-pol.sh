@@ -4,11 +4,11 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.24 (2026-02-20)
+# Version   : v1.3.26 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.3.24"
+SCRIPT_VER="v1.3.26"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -55,6 +55,11 @@ DEF_RETURN_STABLE_RUNS=5
 DEF_QUAR_DEGRADE_SCORE=120
 DEF_QUAR_DEGRADE_RUNS=3
 DEF_QUAR_AVOID_SEC=1800
+
+# Perf tuning defaults (ENG metrics)
+DEF_PINGCOUNT=3
+DEF_PINGW=1
+DEF_TARGETS="8.8.8.8 1.1.1.1"
 
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
 ts_epoch() { date +%s; }
@@ -169,6 +174,14 @@ is_ipv4() {
       if($i<0||$i>255) exit 1
     }}
     END{exit 0}'
+}
+
+is_targets_list() {
+  # aceita lista separada por espaco; tokens com charset seguro (ip/host)
+  # exemplos: "8.8.8.8 1.1.1.1" / "one.one.one.one 8.8.8.8"
+  _v="$1"
+  [ -n "$_v" ] || return 1
+  printf "%s" "$_v" | grep -Eq '^[A-Za-z0-9._:-]+([[:space:]]+[A-Za-z0-9._:-]+)*$'
 }
 
 is_rule() {
@@ -382,6 +395,20 @@ apply_profile_exports() {
            esac
         fi ;;
     esac
+
+    # Tunáveis de métricas (ENG): ficam fora do bloco CRITICAL_VARS, mas são validados aqui
+    case "$key" in
+      PINGCOUNT)
+        is_positive_int "$val" || val="$DEF_PINGCOUNT"
+        ;;
+      PINGW)
+        is_positive_int "$val" || val="$DEF_PINGW"
+        ;;
+      TARGETS)
+        is_targets_list "$val" || val="$DEF_TARGETS"
+        ;;
+    esac
+
     export "$key=$val"
   done <<EOF2
 $lines
@@ -402,6 +429,7 @@ ensure_profiles_conf() {
 #   WAN_ADVANTAGE_MS, VPN_BACK_MARGIN_MS
 #   RETURN_DELAY_SEC, RETURN_MARGIN_MS, RETURN_STABLE_RUNS
 #   QUAR_DEGRADE_SCORE, QUAR_DEGRADE_RUNS, QUAR_AVOID_SEC
+#   PINGCOUNT, PINGW, TARGETS
 
 [conservative]
 # core cadence
@@ -422,6 +450,11 @@ RETURN_STABLE_RUNS=6
 QUAR_DEGRADE_SCORE=120
 QUAR_DEGRADE_RUNS=3
 QUAR_AVOID_SEC=3600
+
+# engine metrics (perf tuning)
+PINGCOUNT=4
+PINGW=1
+TARGETS=8.8.8.8 1.1.1.1
 
 [balanced]
 # core cadence (CURRENT)
@@ -462,6 +495,11 @@ RETURN_STABLE_RUNS=3
 QUAR_DEGRADE_SCORE=120
 QUAR_DEGRADE_RUNS=2
 QUAR_AVOID_SEC=900
+
+# engine metrics (perf tuning)
+PINGCOUNT=2
+PINGW=1
+TARGETS=8.8.8.8 1.1.1.1
 EOF2
 }
 
