@@ -4,14 +4,29 @@
 # Component : AVP-COMMIT
 # File      : avp-commit.sh
 # Role      : Governança e gate final de commit (3A/3B)
-# Version   : v1.0.12 (2026-02-20)
+# Version   : v1.0.13 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.12"
+SCRIPT_VER="v1.0.13"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
+
+changelog_md_for() {
+  _f="$1"
+  _b="$(basename "$_f")"
+  case "$_b" in
+    *.sh) _b="${_b%.sh}" ;;
+  esac
+  echo "avp/changelogs/${_b}.md"
+}
+
+get_md_first_ver() {
+  _md="$1"
+  [ -f "$_md" ] || return 1
+  grep -m1 -E '^##[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+' "$_md" 2>/dev/null     | sed -n 's/^##[[:space:]]*\(v[0-9][0-9.]*\).*/\1/p'
+}
 
 ALLOW_MULTI=0
 ALLOW_LARGE_REMOVAL=0
@@ -54,11 +69,14 @@ fi
 for f in $SH_FILES; do
   HEADER_VER="$(grep -E '^# Version' "$f" | head -n1 | awk '{for(i=1;i<=NF;i++) if($i ~ /^v[0-9]/){print $i; exit}}')"
   SCRIPT_VER_LINE="$(grep -E '^SCRIPT_VER=' "$f" | head -n1 | cut -d'"' -f2)"
-  CHANGELOG_MATCH="$(awk "/^# CHANGELOG/{flag=1;next}/^# =============================================================/{flag=0}flag" "$f" | grep -E "$HEADER_VER" || true)"
+  MD_PATH="$(changelog_md_for "$f")"
+  MD_FIRST_VER="$(get_md_first_ver "$MD_PATH" || true)"
 
   [ -n "$HEADER_VER" ] || { echo "ERROR: Version ausente em $f"; exit 2; }
   [ "$HEADER_VER" = "$SCRIPT_VER_LINE" ] || { echo "ERROR: SCRIPT_VER mismatch em $f"; exit 2; }
-  [ -n "$CHANGELOG_MATCH" ] || { echo "ERROR: CHANGELOG nao contem $HEADER_VER em $f"; exit 2; }
+  [ -f "$MD_PATH" ] || { echo "ERROR: CHANGELOG externo ausente: $MD_PATH (script: $f)"; exit 2; }
+  [ -n "$MD_FIRST_VER" ] || { echo "ERROR: CHANGELOG externo sem entrada de versão em $MD_PATH"; exit 2; }
+  [ "$MD_FIRST_VER" = "$HEADER_VER" ] || { echo "ERROR: CHANGELOG nao contem $HEADER_VER em $f (topo de $MD_PATH = ${MD_FIRST_VER:-none})"; exit 2; }
 done
 
 # ---- REMOCOES ----

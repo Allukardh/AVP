@@ -4,11 +4,11 @@
 # Component : AVP-SMOKE
 # File      : avp-smoke.sh
 # Role      : Pre/Post/Hotfix gates (baseline + patch-safety + syntax + JSON probes + WebUI ASP gate)
-# Version   : v1.4.16 (2026-02-20)
+# Version   : v1.4.18 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.4.16"
+SCRIPT_VER="v1.4.18"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -157,7 +157,7 @@ gate_perms() {
 
   for f in $TARGETS; do
     case "$f" in
-      *.sh|services-start|post-mount)
+      *.sh|services-start|service-event|post-mount)
         [ -f "$f" ] || continue
         echo " $_skip " | grep -q " $f " && continue
         if [ ! -x "$f" ]; then
@@ -260,6 +260,25 @@ _extract_script_ver_var() {
   grep -m1 -E '^[[:space:]]*SCRIPT_VER="v[0-9]+\.[0-9]+\.[0-9]+"' "$_f" 2>/dev/null | _extract_ver3 | head -n 1
 }
 
+changelog_md_for() {
+  _f="$1"
+  _b="$(basename "$_f")"
+  case "$_b" in
+    *.sh) _b="${_b%.sh}" ;;
+  esac
+  echo "avp/changelogs/${_b}.md"
+}
+
+changelog_has_current_version() {
+  _f="$1"
+  _v="$2"
+  _md="$(changelog_md_for "$_f")"
+  [ -f "$_md" ] || return 2
+  grep -q -m1 "^##[[:space:]]\+${_v}[[:space:]]*(" "$_md" 2>/dev/null && return 0
+  grep -q -m1 "^##[[:space:]]\+${_v}[[:space:]]*$" "$_md" 2>/dev/null && return 0
+  return 1
+}
+
 gate_version_consistency_sh() {
   _f="$1"
   _strict="${AVP_SMOKE_STRICT_VER:-1}"
@@ -291,43 +310,61 @@ gate_version_consistency_sh() {
   _sv_nr="${_sv_line%%:*}"
   _sv="$(_extract_script_ver_var "$_f")"
 
-  _next="$(sed -n "$((${_sv_nr:-0}+1))p" "$_f" 2>/dev/null || true)"
-    # allow canonical env block exactly:
-    # <blank> SCRIPT_VER; export PATH; hash -r; set -u; <blank>
-    _p="$(sed -n "$((_sv_nr-1))p" "$_f" 2>/dev/null || true)"
-    _l1="$(sed -n "$((_sv_nr+1))p" "$_f" 2>/dev/null || true)"
-    _l2="$(sed -n "$((_sv_nr+2))p" "$_f" 2>/dev/null || true)"
-    _l3="$(sed -n "$((_sv_nr+3))p" "$_f" 2>/dev/null || true)"
-    _l4="$(sed -n "$((_sv_nr+4))p" "$_f" 2>/dev/null || true)"
+  # ordem oficial (changelog externo):
+  # SCRIPT_VER
+  # export PATH=...
+  # [opcional] export GIT_PAGER=cat PAGER=cat   (ex.: services-start)
+  # hash -r 2>/dev/null || true
+  # set -u
+  #
+  # aceita linha em branco após set -u (recomendado), mas não exige aqui.
+  _l1="$(sed -n "$((_sv_nr+1))p" "$_f" 2>/dev/null || true)"
+  _l2="$(sed -n "$((_sv_nr+2))p" "$_f" 2>/dev/null || true)"
+  _l3="$(sed -n "$((_sv_nr+3))p" "$_f" 2>/dev/null || true)"
+  _l4="$(sed -n "$((_sv_nr+4))p" "$_f" 2>/dev/null || true)"
 
-    _pt="$(printf "%s" "$_p"  | sed "s/^[ \t]*//;s/[ \t]*$//")"
-    _t1="$(printf "%s" "$_l1" | sed "s/^[ \t]*//;s/[ \t]*$//")"
-    _t2="$(printf "%s" "$_l2" | sed "s/^[ \t]*//;s/[ \t]*$//")"
-    _t3="$(printf "%s" "$_l3" | sed "s/^[ \t]*//;s/[ \t]*$//")"
-    _t4="$(printf "%s" "$_l4" | sed "s/^[ \t]*//;s/[ \t]*$//")"
+  _t1="$(printf "%s" "$_l1" | sed "s/^[ \t]*//;s/[ \t]*$//")"
+  _t2="$(printf "%s" "$_l2" | sed "s/^[ \t]*//;s/[ \t]*$//")"
+  _t3="$(printf "%s" "$_l3" | sed "s/^[ \t]*//;s/[ \t]*$//")"
+  _t4="$(printf "%s" "$_l4" | sed "s/^[ \t]*//;s/[ \t]*$//")"
 
-    if [ -z "${_pt:-}" ] \
-      && [ "$_t1" = "export PATH=\"/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:\${PATH:-}\"" ] \
-      && [ "$_t2" = "hash -r 2>/dev/null || true" ] \
-      && [ "$_t3" = "set -u" ] \
-      && [ -z "${_t4:-}" ]; then
-      _next="set -u"
-    fi
+  _path_ok=0
+  _hash_ok=0
+  _setu_ok=0
 
-  if [ "$_next" != "set -u" ]; then
-    warn "VER gate: $_f ordem oficial violada (set -u deve vir logo abaixo do SCRIPT_VER)"
-    _fail=1
-  fi
+  case "$_t1" in
+    export\ PATH=*)
+      _path_ok=1
+      if [ "$_t2" = "export GIT_PAGER=cat PAGER=cat" ]; then
+        [ "$_t3" = "hash -r 2>/dev/null || true" ] && _hash_ok=1
+        [ "$_t4" = "set -u" ] && _setu_ok=1
+      else
+        [ "$_t2" = "hash -r 2>/dev/null || true" ] && _hash_ok=1
+        [ "$_t3" = "set -u" ] && _setu_ok=1
+      fi
+      ;;
+  esac
 
-  _chg_nr="$(grep -n -m1 "^# CHANGELOG" "$_f" 2>/dev/null | cut -d: -f1 || true)"
-  if [ -n "$_chg_nr" ] && [ "$_sv_nr" -le "$_chg_nr" ]; then
-    warn "VER gate: $_f ordem oficial violada (SCRIPT_VER deve vir apos # CHANGELOG)"
+  if [ "$_path_ok" -ne 1 ] || [ "$_hash_ok" -ne 1 ] || [ "$_setu_ok" -ne 1 ]; then
+    warn "VER gate: $_f ordem oficial violada (bootstrap após SCRIPT_VER inválido)"
     _fail=1
   fi
 
   if [ "$_hv" != "$_sv" ]; then
     warn "VER gate: mismatch em $_f (header=$_hv vs SCRIPT_VER=$_sv)"
     [ "$_strict" = "1" ] && _fail=1
+  fi
+
+  if [ -n "$_sv" ]; then
+    changelog_has_current_version "$_f" "$_sv"
+    _cl_rc=$?
+    if [ "$_cl_rc" -eq 2 ]; then
+      warn "VER gate: changelog externo ausente para $_f ($(changelog_md_for "$_f"))"
+      [ "$_strict" = "1" ] && _fail=1
+    elif [ "$_cl_rc" -eq 1 ]; then
+      warn "VER gate: versao $_sv nao encontrada no changelog externo de $_f"
+      [ "$_strict" = "1" ] && _fail=1
+    fi
   fi
 
   [ "$_fail" -eq 0 ] && return 0
@@ -344,7 +381,7 @@ gate_syntax() {
 
   for f in $TARGETS; do
     case "$f" in
-      *.sh|services-start|post-mount)
+      *.sh|services-start|service-event|post-mount)
         [ -f "$f" ] || continue
         _n_syn=$((_n_syn+1))
         if sh -n "$f"; then
@@ -423,7 +460,7 @@ gate_shebang() {
 
   for f in $TARGETS; do
     case "$f" in
-      *.sh|services-start|post-mount)
+      *.sh|services-start|service-event|post-mount)
         [ -f "$f" ] || continue
         [ -n "$_skip" ] && echo " $_skip " | grep -q " $f " && continue
         _h1="$(head -n 1 "$f" 2>/dev/null || true)"
@@ -446,8 +483,12 @@ gate_bashisms() {
   _fail=0
   for f in $TARGETS; do
     case "$f" in
-      *.sh|services-start|post-mount)
+      *.sh|services-start|service-event|post-mount)
         [ -f "$f" ] || continue
+        # evita falso-positivo: o scanner encontra tokens ("[[", "]]", "<(") no proprio codigo do gate
+        case "$f" in
+          avp/bin/avp-smoke.sh|./avp/bin/avp-smoke.sh|/jffs/scripts/avp/bin/avp-smoke.sh) continue ;;
+        esac
         echo " $_skip " | grep -q " $f " && continue
 
         if awk 'BEGIN{rc=0}

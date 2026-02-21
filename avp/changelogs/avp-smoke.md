@@ -1,5 +1,15 @@
 # AVP-SMOKE
 
+## v1.4.18 (2026-02-21)
+* FIX: VER gate aceita bootstrap canônico após SCRIPT_VER (PATH + hash + set -u), com exceção opcional de GIT_PAGER no services-start
+* DROP: remove regra legada de CHANGELOG embutido e exigência antiga de set -u logo abaixo do SCRIPT_VER
+
+
+
+## v1.4.17 (2026-02-21)
+* FIX: BASHISM gate ignora self-scan do avp-smoke.sh (evita falso-positivo em tokens do proprio detector)
+* TUNE: mantém gate ativo para demais scripts/hook targets
+
 ## v1.4.16 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-smoke.md
 - CHG: remove bloco CHANGELOG embutido do script

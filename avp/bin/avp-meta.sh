@@ -4,11 +4,11 @@
 # Component : AVP-META
 # File      : avp-meta.sh
 # Role      : Metadata governor (header/changelog/SCRIPT_VER)
-# Version   : v1.0.1 (2026-02-20)
+# Version   : v1.0.2 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.0.1"
+SCRIPT_VER="v1.0.2"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -79,7 +79,7 @@ write_canon_header(){
   date_="$6"
   status="$7"
   script_ver="$8"
-  changelog_block="$9"   # path to file holding changelog lines (already prefixed with "# ...")
+  changelog_block="$9"   # unused (legacy placeholder; changelog is external .md)
 
   {
     echo "#!/bin/sh"
@@ -91,16 +91,9 @@ write_canon_header(){
     printf "# Version   : %s (%s)\n" "$version" "$date_"
     printf "# Status    : %s\n" "$status"
     echo "$SEP"
-    echo "#"
-    echo "# CHANGELOG"
-    # changelog_block must contain ONLY the lines after "# CHANGELOG" (no blanks)
-    if [ -s "$changelog_block" ]; then
-      cat "$changelog_block"
-    fi
-    echo "$SEP"
     echo ""
     printf 'SCRIPT_VER="%s"\n' "$script_ver"
-    echo 'export PATH="/jffs/scripts:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"'
+    echo 'export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"'
     echo 'hash -r 2>/dev/null || true'
     echo 'set -u'
     echo ""  # <<< regra canônica: 1 linha em branco APÓS set -u
@@ -134,6 +127,85 @@ extract_script_ver(){
   sv="$(grep -m1 '^SCRIPT_VER=' "$f" 2>/dev/null | sed 's/^SCRIPT_VER="//; s/"[[:space:]]*$//' || true)"
   sv="$(trim "${sv:-}")"
   echo "${sv:-}"
+}
+
+
+changelog_md_for(){
+  f="$1"
+  b="$(basename "$f")"
+  case "$b" in
+    *.sh) b="${b%.sh}" ;;
+  esac
+  echo "/jffs/scripts/avp/changelogs/${b}.md"
+}
+
+extract_changelog_md_lines(){
+  in="$1"
+  out="$2"
+  : > "$out"
+  [ -f "$in" ] || return 0
+  awk '
+    BEGIN{body=0}
+    /^##[[:space:]]+/ { body=1; print; next }
+    body==1 { print }
+  ' "$in" >> "$out" 2>/dev/null || true
+}
+
+md_title_for_component(){
+  comp="$1"
+  printf "# %s\n\n" "$comp"
+}
+
+render_new_entry_md(){
+  ver="$1"; date_="$2"; items="$3"
+  printf "## %s (%s)\n" "$ver" "$date_"
+  if [ -s "$items" ]; then
+    while IFS= read -r it || [ -n "$it" ]; do
+      it="$(trim "$it")"
+      [ -n "$it" ] || continue
+      case "$it" in
+        \**) : ;;
+        *) it="* $it" ;;
+      esac
+      printf "%s\n" "$it"
+    done < "$items"
+  else
+    printf "* NOTE: (no changelog items provided)\n"
+  fi
+  printf "\n"
+}
+
+apply_entry_into_changelog_md(){
+  in="$1"; ver="$2"; date_="$3"; items="$4"; out="$5"
+  : > "$out"
+
+  first_ver="$(grep -m1 -E '^##[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+' "$in" 2>/dev/null \
+    | sed -n 's/^##[[:space:]]*\(v[0-9][0-9.]*\).*/\1/p' || true)"
+
+  render_new_entry_md "$ver" "$date_" "$items" >> "$out"
+
+  if [ -n "$first_ver" ] && [ "$first_ver" = "$ver" ]; then
+    awk '
+      BEGIN{seen=0; skip=0}
+      /^##[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+/ {
+        if (seen==0) { seen=1; skip=1; next }
+        skip=0
+      }
+      seen==1 && skip==1 { next }
+      seen==1 && skip==0 { print }
+    ' "$in" >> "$out"
+  else
+    [ -s "$in" ] && cat "$in" >> "$out"
+  fi
+}
+
+write_changelog_md(){
+  md="$1"; component="$2"; body="$3"
+  mkdir -p "$(dirname "$md")" || return 1
+  {
+    md_title_for_component "$component"
+    [ -s "$body" ] && cat "$body"
+  } > "$md"
 }
 
 extract_changelog_lines(){
@@ -304,13 +376,12 @@ normalize_one(){
   d_use="$d_hdr"
   is_date "$d_use" || d_use="$(today)"
 
-  # extract + normalize changelog block lines
-  extract_changelog_lines "$in_s" "$chlog"
-
-  # No bump: keep changelog exactly (already normalized: no blanks/#-only)
+  # changelog externo (md)
+  md_path="$(changelog_md_for "$f")"
+  extract_changelog_md_lines "$md_path" "$chlog"
   cp "$chlog" "$chlog2" 2>/dev/null || : > "$chlog2"
 
-  # write canonical header
+  # write canonical header (sem changelog embutido)
   write_canon_header "$hdr" "$component" "$file_field" "$role" "$v_use" "$d_use" "$status" "$v_use" "$chlog2"
 
   # stitch output
@@ -328,6 +399,7 @@ normalize_one(){
   chmod 755 "${f}.new" 2>/dev/null || true
   mv "${f}.new" "$f" || die "falha no swap final: $f"
 
+  write_changelog_md "$md_path" "$component" "$chlog2" || die "falha escrevendo changelog md: $md_path"
   log "OK: normalized: $f"
   rm -f "$tmp_base".* 2>/dev/null || true
 }
@@ -345,7 +417,8 @@ check_one(){
 
   tr -d "\r" < "$f" > "$in_s" || die "falha lendo $f"
   extract_body "$in_s" "$body"
-  extract_changelog_lines "$in_s" "$chlog"
+  md_path="$(changelog_md_for "$f")"
+  extract_changelog_md_lines "$md_path" "$chlog"
 
   component="$(extract_kv "$in_s" "# Component")"; [ -n "$component" ] || component="AVP-META"
   role="$(extract_kv "$in_s" "# Role")"; [ -n "$role" ] || role="(unspecified)"

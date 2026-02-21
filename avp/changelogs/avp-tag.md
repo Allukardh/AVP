@@ -1,4 +1,4 @@
-# AVP-TOOLS
+# AVP-TAG
 
 ## v1.0.7 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-tag.md

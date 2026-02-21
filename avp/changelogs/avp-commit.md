@@ -1,5 +1,10 @@
 # AVP-COMMIT
 
+## v1.0.13 (2026-02-21)
+* CHG: valida versão atual no changelog externo (avp/changelogs/<script>.md) para arquivos .sh
+* ADD: helpers internos para resolver caminho do changelog externo e ler primeira versão do .md
+* TUNE: alinhamento com modelo de CHANGELOG externalizado
+
 ## v1.0.12 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-commit.md
 - CHG: remove bloco CHANGELOG embutido do script
