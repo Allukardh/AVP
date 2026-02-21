@@ -4,17 +4,11 @@
 # Component : AVP-META
 # File      : avp-meta.sh
 # Role      : Metadata governor (header/changelog/SCRIPT_VER)
-# Version   : v1.0.0 (2026-02-16)
+# Version   : v1.0.1 (2026-02-20)
 # Status    : stable
 # =============================================================
-#
-# CHANGELOG
-# - v1.0.0 (2026-02-16)
-# * ADD: spec-driven meta editor (create/normalize/apply) for header + CHANGELOG + SCRIPT_VER (canonical)
-# * ADD: modes: --check / --normalize / --apply --spec / --print-spec-template / --help
-# =============================================================
 
-SCRIPT_VER="v1.0.0"
+SCRIPT_VER="v1.0.1"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u

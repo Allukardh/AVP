@@ -5,16 +5,10 @@
 # File      : avp-hygiene-scan.sh
 # Role      : Scan scripts for hygiene candidates (NO changes)
 # Status    : stable
-# Version   : v1.0.1 (2026-01-27)
+# Version   : v1.0.2 (2026-02-20)
 # ============================================================
-#
-# CHANGELOG
-# - v1.0.1 (2026-01-27)
-#   * FIX: avoid awk "function" keyword to satisfy SMOKE BASHISM gate
-# - v1.0.0 (2026-01-27)
-#   * ADD: safe scanner (report-only) for comments/blank lines/dead patterns
-#
-SCRIPT_VER="v1.0.1"
+
+SCRIPT_VER="v1.0.2"
 set -u
 
 ts(){ date '+%Y-%m-%d %H:%M:%S'; }

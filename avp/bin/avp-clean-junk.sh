@@ -5,14 +5,10 @@
 # File      : avp-clean-junk.sh
 # Role      : Safe cleanup of common untracked junk (dry-run default)
 # Status    : stable
-# Version   : v1.0.0 (2026-01-27)
+# Version   : v1.0.1 (2026-02-20)
 # ============================================================
-#
-# CHANGELOG
-# - v1.0.0 (2026-01-27)
-#   * ADD: dry-run scanner + optional remover (untracked-only with git)
-#
-SCRIPT_VER="v1.0.0"
+
+SCRIPT_VER="v1.0.1"
 set -u
 
 ts(){ date '+%Y-%m-%d %H:%M:%S'; }
