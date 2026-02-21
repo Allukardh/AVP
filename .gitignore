@@ -89,6 +89,8 @@ avp/docs/
 
 # base: ignore everything under avp (se já existir antes, ok)
 avp/*
+!avp/changelogs/
+!avp/changelogs/*.md
 
 # allowlist (track)
 !avp/bin/
