@@ -1,6 +1,5 @@
 # CHANGELOG — AVP-WEBUI Installer/Orchestrator
 
-# AVP-WEBUI Installer/Orchestrator
 ## v1.0.12 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-webui.md
 - CHG: remove bloco CHANGELOG embutido do script

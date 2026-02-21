@@ -5,34 +5,10 @@ AutoVPN Platform (AVP)
 Component : AVP-WEBUI (ASP)
 File      : avp.asp
 Role      : WebUI frontend (router user page)
-Version   : v1.0.18 (2026-02-10)
+Version   : v1.0.19 (2026-02-21)
 Status    : stable
 =============================================================
 
-CHANGELOG
-- v1.0.18 (2026-02-10)
-  * FIX: auto-refresh default (5s) + persist in localStorage (avp_auto) without breaking guards
-- v1.0.17 (2026-02-10)
-  * FIX: defensivo contra DOM ausente (evita crash e regressão de auto-refresh)
-- v1.0.16 (2026-02-10)
-  * FIX: restore <span id="last"> in header card (avoid JS null crash) — WebUI v1.0.15 hotfix
-- v1.0.15 (2026-02-10)
-  * ADD: WebUI Console (apply.cgi) + last action box (/user/avp-action-last.json) + toast
-  * ADD: Console actions: toggle enable/disable, reload, snapshot, dhcp_refresh (normal/aggressive), profile list/get/set, device list/add/remove/update
-- v1.0.14 (2026-02-09)
-  * FIX: toolbar Order/Auto-refresh (rebuild HTML; restore options/labels) + keep default devices.conf order
-- v1.0.13 (2026-02-09)
-  * UX: Order selector (devices.conf default; optional label/pref) + persist in localStorage (fix HTML injection + smoke gate)
-- v1.0.11 (2026-01-27) - CHORE: changelog entry (smoke gate)
-- v1.0.10 (2026-01-08)
-  * CHG: logs (FEED_STATE/FEED_WARN/POL_LAST) agora em /tmp/avp_logs — evita escrita no jffs
-- v1.0.9 (2026-01-07)
-  * FIX: bump do pill de versao (WEBUI_VER + texto inicial do #ver)
-- v1.0.8 (2026-01-04)
-  * CHORE: adiciona header + mini-changelog interno (estilo ENG)
-  * FIX: corrige markup do "Last refresh" (linha quebrada)
-- v1.0.7 (2026-01-04)
-  * FIX: Open logs (btnLogs) handler único + logMode (C1.5)
 -->
 <html>
 <head>
@@ -130,7 +106,7 @@ CHANGELOG
         <label class="muted">
           Order
           <select id="order">
-            <option value="conf">devices.conf</option>
+            <option value="conf">VPN Director</option>
             <option value="label">label</option>
             <option value="pref">pref</option>
           </select>
@@ -245,7 +221,7 @@ CHANGELOG
   const $ = (id)=>document.getElementById(id);
   let timer = null;
 
-  const WEBUI_VER = "v1.0.18";
+  const WEBUI_VER = "v1.0.19";
   if ($("ver")) $("ver").textContent = "WebUI " + WEBUI_VER;
 
 
@@ -566,7 +542,7 @@ async function doAction(action, extra){
       if (f === "vpn") devs = devs.filter(d => String(d.state||"").toLowerCase() === "vpn");
       if (f === "wan") devs = devs.filter(d => String(d.state||"").toLowerCase() === "wan");
 
-      // order (default: devices.conf order)
+      // order (default: SSOT order / VPN Director)
       const ord = $("order") ? String($("order").value || "conf") : (localStorage.getItem("avp_order") || "conf");
       if (ord === "label"){
         devs.sort((a,b)=> String(a.label||"").localeCompare(String(b.label||"")));
