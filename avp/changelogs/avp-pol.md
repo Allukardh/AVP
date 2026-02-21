@@ -1,20 +1,21 @@
+# CHANGELOG — AVP-POL
+
+## v1.3.28 (2026-02-21)
+- FEAT: parser SSOT read-only do VPN Director (Merlin) em `avp-pol.sh` via `/jffs/openvpn/vpndirector_rulelist`
+- FEAT: novo subcomando `device ssot` (plain e `--json`) emitindo `enabled|label|ip|iface_base|mac`
+- CHG: sem fallback para `devices.conf` na leitura do inventário SSOT (falha explícita no subcomando)
 ## v1.3.27 (2026-02-21)
 - FIX: restaura contrato de `CRITICAL_VARS` no AVP-POL (fallbacks canônicos dos campos core voltam a ser aplicados).
 - FIX: completa bloco `[balanced]` no template `ensure_profiles_conf()` com `PINGCOUNT`, `PINGW` e `TARGETS`.
 - SAFE: mantém tunáveis do ENG via `profiles.conf` alinhados com defaults e template interno.
-
 ## v1.3.26 (2026-02-21)
 - FIX: remove variáveis globais indevidas (`PINGCOUNT`, `PINGW`, `TARGETS`) do topo do AVP-POL.
 - SAFE: mantém somente defaults canônicos `DEF_PINGCOUNT`, `DEF_PINGW`, `DEF_TARGETS` e export via `apply_profile_exports`.
-
 ## v1.3.25 (2026-02-21)
 - FEAT: profiles.conf agora suporta tunáveis de métricas do ENG (`PINGCOUNT`, `PINGW`, `TARGETS`).
 - FEAT: AVP-POL valida e exporta `PINGCOUNT`, `PINGW` e `TARGETS` para o AVP-ENG.
 - SAFE: fallback canônico em valores inválidos (`DEF_PINGCOUNT`, `DEF_PINGW`, `DEF_TARGETS`).
 - UX: template interno de `ensure_profiles_conf` atualizado com os novos campos (prepara integração com GUI/API).
-
-# CHANGELOG — AVP-POL
-
 ## v1.3.24 (2026-02-20)
 - DOC: externaliza CHANGELOG para /jffs/scripts/avp/changelogs/avp-pol.md
 - CHG: remove bloco CHANGELOG embutido do script

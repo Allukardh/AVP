@@ -4,11 +4,11 @@
 # Component : AVP-POL
 # File      : avp-pol.sh
 # Role      : Policy Controller (global.conf + profiles.conf + devices.conf)
-# Version   : v1.3.27 (2026-02-21)
+# Version   : v1.3.28 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.3.27"
+SCRIPT_VER="v1.3.28"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -262,6 +262,183 @@ devices_list_json() {
   ' "$DEVICES_CONF" 2>/dev/null
 }
 
+
+# ============================================================
+# VPN Director SSOT inventory (read-only; no devices.conf fallback)
+# Canonical source: /jffs/openvpn/vpndirector_rulelist
+# Line format emitted by AVP-POL: enabled|label|ip|iface_base|mac
+# ============================================================
+VPDIR_RULELIST_FILE_PRIMARY="/jffs/openvpn/vpndirector_rulelist"
+VPDIR_RULELIST_FILE_FALLBACK="/jffs/nvram/vpndirector_rulelist"
+VPDIR_DNSMASQ_CONF="/etc/dnsmasq.conf"
+
+vpnd_inv_detect_source() {
+  if [ -s "$VPDIR_RULELIST_FILE_PRIMARY" ]; then
+    printf '%s\n' "$VPDIR_RULELIST_FILE_PRIMARY"
+    return 0
+  fi
+  if [ -s "$VPDIR_RULELIST_FILE_FALLBACK" ]; then
+    printf '%s\n' "$VPDIR_RULELIST_FILE_FALLBACK"
+    return 0
+  fi
+  return 1
+}
+
+vpnd_inv_read_raw() {
+  _src="$(vpnd_inv_detect_source 2>/dev/null || true)"
+  [ -n "${_src:-}" ] || return 1
+  [ -s "$_src" ] || return 1
+  cat "$_src" 2>/dev/null
+}
+
+vpnd_ip_mac_map_emit() {
+  # Emits: ip|mac (MAC uppercased). Source 1 = nvram dhcp_staticlist; fallback = dnsmasq dhcp-host
+  _dsl="$(nvram get dhcp_staticlist 2>/dev/null || true)"
+  if [ -n "${_dsl:-}" ]; then
+    printf '%s' "$_dsl" | awk '
+      BEGIN{ RS="<" }
+      NR==1 { next }
+      {
+        rec=$0
+        gsub(/\r/, "", rec)
+        gsub(/\n/, "", rec)
+        if (rec == "") next
+        n=split(rec, a, ">")
+        mac=a[1]; ip=a[2]
+        if (mac=="" || ip=="") next
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", mac)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", ip)
+        mac=toupper(mac)
+        if (ip ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
+          printf "%s|%s\n", ip, mac
+        }
+      }
+    '
+    return 0
+  fi
+
+  if [ -f "$VPDIR_DNSMASQ_CONF" ]; then
+    awk -F'[=,]' '
+      /^dhcp-host=/ {
+        mac=$2; ip=$3
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", mac)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", ip)
+        if (mac != "" && ip ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {
+          printf "%s|%s\n", ip, toupper(mac)
+        }
+      }
+    ' "$VPDIR_DNSMASQ_CONF" 2>/dev/null
+    return 0
+  fi
+
+  return 1
+}
+
+vpnd_inv_emit() {
+  _src="$(vpnd_inv_detect_source 2>/dev/null || true)"
+  [ -n "${_src:-}" ] || return 1
+
+  _map="/tmp/avp_vpnd_ipmac.$$"
+  : >"$_map" 2>/dev/null || return 1
+  vpnd_ip_mac_map_emit >"$_map" 2>/dev/null || :
+
+  awk -v MAP="$_map" '
+    BEGIN{
+      while ((getline line < MAP) > 0) {
+        n=split(line, p, "|")
+        if (n >= 2) ip2mac[p[1]] = p[2]
+      }
+      close(MAP)
+    }
+    {
+      raw = raw $0
+    }
+    END{
+      n = split(raw, recs, "<")
+      for (i=1; i<=n; i++) {
+        rec = recs[i]
+        gsub(/\r/, "", rec)
+        gsub(/\n/, "", rec)
+        if (rec == "") continue
+
+        p1 = index(rec, ">")
+        if (p1 <= 0) continue
+        enabled = substr(rec, 1, p1-1)
+        rest = substr(rec, p1+1)
+
+        p2 = index(rest, ">")
+        if (p2 <= 0) continue
+        label = substr(rest, 1, p2-1)
+        rest2 = substr(rest, p2+1)
+
+        p3 = index(rest2, ">>")
+        if (p3 <= 0) continue
+        ip = substr(rest2, 1, p3-1)
+        iface = substr(rest2, p3+2)
+
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", enabled)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", label)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", ip)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", iface)
+
+        if (enabled !~ /^[01]$/) continue
+        if (ip !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) continue
+
+        iface_l = tolower(iface)
+        if (iface_l == "") iface_l = "wan"
+
+        mac = (ip in ip2mac) ? ip2mac[ip] : ""
+        printf "%s|%s|%s|%s|%s\n", enabled, label, ip, iface_l, mac
+      }
+    }
+  ' "$_src"
+  _rc=$?
+  rm -f "$_map" 2>/dev/null || :
+  return $_rc
+}
+
+vpnd_inv_json() {
+  vpnd_inv_emit 2>/dev/null | awk -F'|' '
+    BEGIN{ first=1; printf "[" }
+    {
+      enabled=$1+0; label=$2; ip=$3; iface=$4; mac=$5
+      gsub(/\\/,"\\\\",label); gsub(/"/,"\\\"",label)
+      gsub(/\\/,"\\\\",ip);    gsub(/"/,"\\\"",ip)
+      gsub(/\\/,"\\\\",iface); gsub(/"/,"\\\"",iface)
+      gsub(/\\/,"\\\\",mac);   gsub(/"/,"\\\"",mac)
+      if(first==0) printf ","; else first=0
+      printf "{\"enabled\":%d,\"label\":\"%s\",\"ip\":\"%s\",\"iface_base\":\"%s\",\"mac\":\"%s\"}",
+             enabled, label, ip, iface, mac
+    }
+    END{ printf "]" }
+  '
+}
+
+cmd_device_ssot() {
+  _mode="${1:-plain}"
+
+  _src="$(vpnd_inv_detect_source 2>/dev/null || true)"
+  if [ -z "${_src:-}" ]; then
+    json_err 20 "device_ssot" "vpndirector ssot unavailable" '{"hint":"missing /jffs/openvpn/vpndirector_rulelist"}'
+    return 20
+  fi
+
+  _lines="$(vpnd_inv_emit 2>/dev/null || true)"
+  [ -n "${_lines:-}" ] || {
+    json_err 21 "device_ssot" "vpndirector ssot parse failed/empty" "$(printf '{ "source":"%s" }' "$(jesc "$_src")")"
+    return 21
+  }
+
+  if [ "$_mode" = "json" ]; then
+    _data="$(printf '{ "source":"%s", "devices": %s }' "$(jesc "$_src")" "$(vpnd_inv_json)")"
+    json_ok 0 "device_ssot" "ok" "$_data"
+    return 0
+  fi
+
+  printf '%s\n' "$_lines"
+  return 0
+}
+
 LIVE_MODE=0
 LIVE_SLEEP=5
 
@@ -512,6 +689,7 @@ Usage:
   avp-pol.sh disable
   avp-pol.sh status
   avp-pol.sh run [--live] [--show-last]
+  avp-pol.sh device ssot [--json]
 
 Notes:
   enable/disable:
@@ -1141,10 +1319,13 @@ case "${1:-}" in
     sub="${2:-}"
     case "$sub" in
       list) cmd_device_list;;
+      ssot)
+        [ "${3:-}" = "--json" ] && cmd_device_ssot json || cmd_device_ssot plain
+        ;;
       add)  cmd_device_add "${3:-}" "${4:-}" "${5:-}" "${6:-}";;
       del)  cmd_device_del "${3:-}";;
       set)  cmd_device_set "${3:-}" "${4:-}" "${5:-}" "${6:-}";;
-      *) json_err 2 "device" "invalid subcommand" '{"hint":"device list|add|del|set"}'; exit 2;;
+      *) json_err 2 "device" "invalid subcommand" '{"hint":"device list|ssot [--json]|add|del|set"}'; exit 2;;
     esac
     ;;
 
