@@ -1,5 +1,9 @@
 # CHANGELOG — AVP-ENG
 
+## v1.2.48 (2026-02-21)
+- FIX: final_reconcile canônico no fim do ciclo (rele kernel e persiste dev_mode/last_real_* após apply/fallback/return)
+- FIX: branch SSOT disabled (enabled=0) agora persiste estado WAN no statefile para GUI/CLI (dev_mode/last_real_* = wan)
+
 ## v1.2.47 (2026-02-21)
 - FEAT: Fase 4 de reconciliação operacional no AVP-ENG (`ip rule`) com purge por `pref` + `from IP` antes de aplicar regra final
 - FEAT: validação explícita do estado final no kernel (lookup esperado para VPN e ausência de regra para WAN/disabled)

@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.47 (2026-02-21)
+# Version   : v1.2.48 (2026-02-21)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.2.47"
+SCRIPT_VER="v1.2.48"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -847,10 +847,7 @@ run_device() {
   MODE_REAL="wan"
   [ -n "$CUR_RAW" ] && MODE_REAL="vpn"
 
-  # audit: persiste a realidade observada
-  set_state last_real_mode "$MODE_REAL"
-  set_state last_real_table "${CUR_RAW:-wan}"
-
+  # reconcile inicial (estado operacional). Persistencia final canonica ocorre no fim do ciclo.
   DEV_MODE_STATE="$(get_state dev_mode)"
   if [ -z "${DEV_MODE_STATE:-}" ]; then
     # init: state novo/legado sem dev_mode => persistir p/ GUI/CLI (evita "unknown")
@@ -1289,6 +1286,23 @@ fi
     fi
   fi
 
+  # ===== FINAL RECONCILE (kernel -> statefile canônico) =====
+  FINAL_CUR_RAW="$(current_device_table)"
+  FINAL_CUR="$FINAL_CUR_RAW"; [ -z "$FINAL_CUR_RAW" ] && FINAL_CUR="(none)"
+  MODE_REAL_FINAL="wan"
+  [ -n "$FINAL_CUR_RAW" ] && MODE_REAL_FINAL="vpn"
+
+  if [ "$CUR" != "$FINAL_CUR" ] || [ "$DEV_MODE" != "$MODE_REAL_FINAL" ]; then
+    echo "[STATE] final_reconcile: mode=$DEV_MODE->$MODE_REAL_FINAL table=$CUR->$FINAL_CUR"
+  fi
+
+  CUR="$FINAL_CUR"
+  DEV_MODE="$MODE_REAL_FINAL"
+
+  set_state last_real_mode "$MODE_REAL_FINAL"
+  set_state last_real_table "${FINAL_CUR_RAW:-wan}"
+  set_state dev_mode "$MODE_REAL_FINAL"
+
   # ===== SUMMARY (no final) =====
   if [ "$DEV_MODE" = "vpn" ] && [ "$CUR" != "(none)" ]; then
     echo "[SUMMARY] $DEVICE_LABEL via $CUR (VPN) | best=${BEST_IF:-none}(${BEST_SCORE:-INF}) | wan=${WAN_SCORE:-INF}"
@@ -1428,6 +1442,18 @@ while IFS='|' read -r L I P S EN IFACE MAC; do
     ip route flush cache 2>/dev/null || true
     _left="$(count_rules_for_ip_any "$I" 2>/dev/null || echo 0)"
     echo "[RECON] disabled final ip=$I rules_left=${_left:-?}"
+
+    # Persistencia canônica para GUI/CLI (device desativado = WAN)
+    DEVICE_LABEL="$L"
+    DEVICE_IP="$I"
+    RULE_PREF="$P"
+    STATE_FILE="$S"
+    state_begin_device
+    set_state dev_mode "wan"
+    set_state last_real_mode "wan"
+    set_state last_real_table "wan"
+    state_flush_device
+
     continue
   fi
 
