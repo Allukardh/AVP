@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng.sh
 # Role      : Multi-Device VPN Failover (Engine)
-# Version   : v1.2.48 (2026-02-21)
+# Version   : v1.2.51 (2026-02-22)
 # Status    : stable
 # =============================================================
 
-SCRIPT_VER="v1.2.48"
+SCRIPT_VER="v1.2.51"
 export PATH="/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:${PATH:-}"
 hash -r 2>/dev/null || true
 set -u
@@ -552,8 +552,25 @@ warm_metrics_cycle() {
 
 # ---------- ROUTING ----------
 current_device_table() {
-  ip rule show | awk -v ip="$DEVICE_IP" -v pref="$RULE_PREF" \
-    '$1~pref":" && $0~("from "ip){for(i=1;i<=NF;i++)if($i=="lookup"){print $(i+1); exit}}'
+  # Parser determinístico (pref + from IP) para evitar falso "(none)".
+  # Ex.: "11210:  from 192.168.1.45 lookup wgc1"
+  ip -4 rule show 2>/dev/null | awk -v ip="$DEVICE_IP" -v pref="$RULE_PREF" '
+    BEGIN { target = pref ":" }
+    $1 == target {
+      found_from = 0
+      for (i = 1; i <= NF; i++) {
+        if ($i == "from" && (i+1) <= NF && $(i+1) == ip) found_from = 1
+      }
+      if (!found_from) next
+
+      for (i = 1; i <= NF; i++) {
+        if ($i == "lookup" && (i+1) <= NF) {
+          print $(i+1)
+          exit
+        }
+      }
+    }
+  '
 }
 
 apply_device_table() {
@@ -789,12 +806,19 @@ load_devices_from_ssot() {
     _idx=$((_idx+1))
 
     PREF=""
+    PREF_KERNEL="$(current_pref_for_ip_any "$IP" 2>/dev/null || true)"
+    PREF_MAP=""
     if [ -n "${MAC:-}" ]; then
-      PREF="$(prefmap_get "$MAC" 2>/dev/null || true)"
+      PREF_MAP="$(prefmap_get "$MAC" 2>/dev/null || true)"
     fi
 
-    if ! echo "${PREF:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
-      PREF="$(current_pref_for_ip_any "$IP" 2>/dev/null || true)"
+    if echo "${PREF_KERNEL:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
+      PREF="$PREF_KERNEL"
+      if [ -n "${MAC:-}" ] && echo "${PREF_MAP:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1 && [ "$PREF_MAP" != "$PREF_KERNEL" ]; then
+        echo "[PREFMAP] drift mac=$MAC ip=$IP prefmap=$PREF_MAP kernel=$PREF_KERNEL -> heal"
+      fi
+    else
+      PREF="$PREF_MAP"
     fi
 
     if ! echo "${PREF:-}" | awk '($0 ~ /^[0-9]+$/){exit 0} {exit 1}' >/dev/null 2>&1; then
@@ -1435,8 +1459,6 @@ while IFS='|' read -r L I P S EN IFACE MAC; do
     echo "-------------------------------"
     echo "[DEVICE] $L  ip=$I  pref=$P  state=$S"
     echo "[SSOT] disabled (iface_base=${IFACE:-?} mac=${MAC:-}) -> skip manage + reconcile cleanup"
-    echo "[RECON] disabled purge pref=$P"
-    cleanup_rule_for_pref "$P"
     echo "[RECON] disabled purge from=$I"
     cleanup_rules_for_ip_anypref "$I"
     ip route flush cache 2>/dev/null || true
