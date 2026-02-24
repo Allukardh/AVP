@@ -1,5 +1,16 @@
 # CHANGELOG — AVP-ENG
 
+## v2.0.3 (2026-02-23)
+- CHG: remove fallback por glob no `legacy-live` e mantém resolução canônica do TMPLOG por PID.
+- CHG: remove log de debug temporário do fallback de TMPLOG.
+- TUNE: reduz drain final do `legacy-live` de 8 para 6 ciclos estáveis.
+
+
+## v2.0.2 (2026-02-23)
+- FIX: `legacy-live` agora resolve TMPLOG com fallback por glob (`/tmp/avp_eng.*`) quando o nome por PID não casa com o `$$` do shell legado.
+- FIX: aumenta janela de drain final do live para reduzir risco de corte nas últimas linhas.
+
+
 ## v2.0.1 (2026-02-23)
 - FIX: normaliza header canônico de `avp-eng` para o padrão AVP (Version/Status no bloco comentado + `SCRIPT_VER` fora do comentário).
 - FIX: hygiene no helper `legacy-live` (context manager em `/dev/null`).

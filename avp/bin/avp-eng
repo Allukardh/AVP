@@ -4,11 +4,11 @@
 # Component : AVP-ENG
 # File      : avp-eng
 # Role      : Engine (Python canonical entrypoint)
-# Version   : v2.0.1 (2026-02-23)
+# Version   : v2.0.3 (2026-02-23)
 # Status    : beta
 # =============================================================
 
-SCRIPT_VER="v2.0.1"
+SCRIPT_VER="v2.0.3"
 
 import os
 import sys
@@ -63,7 +63,7 @@ def _follow_tmpfile_until_exit(proc, tmp_path):
             cur_size = -1
 
         if alive:
-            time.sleep(0.15)
+            time.sleep(0.12)
             continue
 
         if cur_size == last_size:
@@ -72,9 +72,10 @@ def _follow_tmpfile_until_exit(proc, tmp_path):
             stable_after_exit = 0
         last_size = cur_size
 
-        if stable_after_exit >= 4:
+        # drain final enxuto (estável no teu teste)
+        if stable_after_exit >= 6:
             break
-        time.sleep(0.15)
+        time.sleep(0.12)
 
     rc = proc.returncode
     return int(0 if rc is None else rc)
@@ -98,7 +99,8 @@ def _legacy_live(argv):
 
         tmp_path = "/tmp/avp_eng.%s" % proc.pid
 
-        for _ in range(20):
+        # espera o TMPLOG principal do legado (padrão por PID)
+        for _ in range(40):
             if os.path.exists(tmp_path):
                 break
             if proc.poll() is not None:

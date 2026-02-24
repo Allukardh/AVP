@@ -4,11 +4,11 @@
 # Component : AVP-POL
 # File      : avp-pol
 # Role      : Policy Controller (Python canonical entrypoint)
-# Version   : v2.0.1 (2026-02-23)
+# Version   : v2.0.3 (2026-02-23)
 # Status    : beta
 # =============================================================
 
-SCRIPT_VER="v2.0.1"
+SCRIPT_VER="v2.0.3"
 
 import os
 import sys
@@ -17,7 +17,13 @@ from datetime import datetime
 
 CANON_BASE = "/jffs/scripts/avp"
 BIN_DIR = f"{CANON_BASE}/bin"
+POLICY_DIR = f"{CANON_BASE}/policy"
+GLOBAL_CONF = f"{POLICY_DIR}/global.conf"
+PROFILES_CONF = f"{POLICY_DIR}/profiles.conf"
 LEGACY_POL = f"{BIN_DIR}/avp-pol.sh"
+CANON_ENG = f"{BIN_DIR}/avp-eng"
+LEGACY_ENG = f"{BIN_DIR}/avp-eng.sh"
+DEFAULT_PROFILE = "balanced"
 
 def ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -39,21 +45,132 @@ def _legacy_exec(argv):
     proc = subprocess.run([LEGACY_POL] + argv, env=_env())
     return int(proc.returncode)
 
+def _ensure_global_conf():
+    os.makedirs(POLICY_DIR, exist_ok=True)
+    if not os.path.exists(GLOBAL_CONF):
+        with open(GLOBAL_CONF, "w") as f:
+            f.write("AUTOVPN_ENABLED=1\nAUTOVPN_PROFILE=balanced\n")
+
+def _parse_shell_kv_file(path):
+    data = {}
+    try:
+        with open(path, "r") as f:
+            for raw in f:
+                line = raw.strip().replace("\r", "")
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k:
+                    data[k] = v
+    except OSError:
+        pass
+    return data
+
+def _parse_profile_section(profile_name):
+    kv = {}
+    try:
+        with open(PROFILES_CONF, "r") as f:
+            in_sec = False
+            for raw in f:
+                line = raw.replace("\r", "").strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    sec = line[1:-1].strip()
+                    in_sec = (sec == profile_name)
+                    continue
+                if not in_sec or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                if "#" in v:
+                    v = v.split("#", 1)[0].strip()
+                if ";" in v:
+                    v = v.split(";", 1)[0].strip()
+                if k and all(ch.isupper() or ch.isdigit() or ch == "_" for ch in k):
+                    kv[k] = v
+    except OSError:
+        return {}
+    return kv
+
+def _require_run_files():
+    if not os.path.isdir(POLICY_DIR):
+        out(f"[ERR] code=10 policy_dir ausente: {POLICY_DIR}\n")
+        return 10
+    if not os.path.isfile(GLOBAL_CONF):
+        out(f"[ERR] code=10 global.conf ausente: {GLOBAL_CONF}\n")
+        return 10
+    if not os.path.isfile(PROFILES_CONF):
+        out(f"[ERR] code=10 profiles.conf ausente: {PROFILES_CONF}\n")
+        return 10
+    return 0
+
+def _run_live_python():
+    _ensure_global_conf()
+    rc = _require_run_files()
+    if rc != 0:
+        return rc
+
+    g = _parse_shell_kv_file(GLOBAL_CONF)
+    enabled = str(g.get("AUTOVPN_ENABLED", "1"))
+    selected_profile = g.get("AUTOVPN_PROFILE", DEFAULT_PROFILE) or DEFAULT_PROFILE
+
+    env = _env()
+    env["AUTOVPN_ENABLED"] = enabled
+    env["AUTOVPN_PROFILE"] = selected_profile
+
+    prof_kv = _parse_profile_section(selected_profile)
+    if not prof_kv and selected_profile != DEFAULT_PROFILE:
+        prof_kv = _parse_profile_section(DEFAULT_PROFILE)
+        env["AUTOVPN_PROFILE"] = DEFAULT_PROFILE
+
+    for k, v in prof_kv.items():
+        env[k] = v
+
+    if not os.path.exists(CANON_ENG):
+        out(f"{ts()} [POL] error: canonical engine not found: {CANON_ENG}\n")
+        return 127
+    if not os.path.exists(LEGACY_ENG):
+        out(f"{ts()} [POL] error: legacy engine fallback not found: {LEGACY_ENG}\n")
+        return 127
+
+    profile_for_log = env.get("AUTOVPN_PROFILE", DEFAULT_PROFILE)
+    out(f"{ts()} [POL] run: profile={profile_for_log} (live=1)\n")
+    out(f"{ts()} [POL] calling engine: {LEGACY_ENG}\n")
+
+    env["AVP_CALLER"] = "POL"
+    proc = subprocess.run([CANON_ENG, "legacy-live"], env=env)
+    rc = int(proc.returncode)
+
+    out(f"{ts()} [POL] done\n")
+    return rc
+
 def _help():
     out("AVP-POL (Python canonical entrypoint)\n\n")
     out("Usage:\n")
     out("  avp-pol <args>\n\n")
     out("Transition phase:\n")
-    out("  - legado avp-pol.sh permanece congelado e é usado como fallback\n")
-    out("  - lógica do POL será migrada gradualmente para este entrypoint\n")
-    out("  - correção do live será canonizada aqui conforme o run migrar\n")
+    out("  - `run --live` já é canônico em Python (usa `avp-eng legacy-live`)\n")
+    out("  - demais comandos seguem fallback para `avp-pol.sh` (legado congelado)\n")
     return 0
 
 def main(argv):
     if not argv:
         return _legacy_exec([])
+
     if argv[0] in ("-h", "--help", "help"):
         return _help()
+
+    if argv[0] == "run" and "--live" in argv[1:] and "--show-last" not in argv[1:]:
+        allowed = {"--live"}
+        extras = [a for a in argv[1:] if a not in allowed]
+        if extras:
+            return _legacy_exec(argv)
+        return _run_live_python()
+
     return _legacy_exec(argv)
 
 if __name__ == "__main__":

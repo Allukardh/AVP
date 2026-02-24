@@ -1,5 +1,15 @@
 # CHANGELOG — AVP-POL
 
+## v2.0.3 (2026-02-23)
+- CHG: remove exigência de `devices.conf` no caminho canônico `run --live` (SSOT via VPN Director).
+
+
+## v2.0.2 (2026-02-23)
+- FEAT: migra caminho `run --live` para o entrypoint canônico Python `avp-pol`.
+- FEAT: `run --live` agora chama `avp-eng legacy-live`, eliminando dependência do `tail -f` do legado no live.
+- NOTE: demais subcomandos/fluxos continuam em fallback para `avp-pol.sh` (transição gradual).
+
+
 ## v2.0.1 (2026-02-23)
 - FIX: normaliza header canônico de `avp-pol` para o padrão AVP (Version/Status no bloco comentado + `SCRIPT_VER` fora do comentário).
 
