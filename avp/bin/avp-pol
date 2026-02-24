@@ -4,11 +4,11 @@
 # Component : AVP-POL
 # File      : avp-pol
 # Role      : Policy Controller (Python canonical entrypoint)
-# Version   : v2.0.3 (2026-02-23)
+# Version   : v2.0.4 (2026-02-23)
 # Status    : beta
 # =============================================================
 
-SCRIPT_VER="v2.0.3"
+SCRIPT_VER="v2.0.4"
 
 import os
 import sys
@@ -108,11 +108,11 @@ def _require_run_files():
         return 10
     return 0
 
-def _run_live_python():
+def _build_run_env():
     _ensure_global_conf()
     rc = _require_run_files()
     if rc != 0:
-        return rc
+        return rc, None, None
 
     g = _parse_shell_kv_file(GLOBAL_CONF)
     enabled = str(g.get("AUTOVPN_ENABLED", "1"))
@@ -132,28 +132,41 @@ def _run_live_python():
 
     if not os.path.exists(CANON_ENG):
         out(f"{ts()} [POL] error: canonical engine not found: {CANON_ENG}\n")
-        return 127
+        return 127, None, None
     if not os.path.exists(LEGACY_ENG):
         out(f"{ts()} [POL] error: legacy engine fallback not found: {LEGACY_ENG}\n")
-        return 127
+        return 127, None, None
 
     profile_for_log = env.get("AUTOVPN_PROFILE", DEFAULT_PROFILE)
-    out(f"{ts()} [POL] run: profile={profile_for_log} (live=1)\n")
-    out(f"{ts()} [POL] calling engine: {LEGACY_ENG}\n")
+    return 0, env, profile_for_log
+
+def _run_python(live):
+    rc, env, profile_for_log = _build_run_env()
+    if rc != 0:
+        return rc
 
     env["AVP_CALLER"] = "POL"
-    proc = subprocess.run([CANON_ENG, "legacy-live"], env=env)
-    rc = int(proc.returncode)
 
+    if live:
+        out(f"{ts()} [POL] run: profile={profile_for_log} (live=1)\n")
+        out(f"{ts()} [POL] calling engine: {CANON_ENG} legacy-live (legado={LEGACY_ENG})\n")
+        proc = subprocess.run([CANON_ENG, "legacy-live"], env=env)
+    else:
+        out(f"{ts()} [POL] run: profile={profile_for_log} (live=0)\n")
+        out(f"{ts()} [POL] calling engine: {CANON_ENG}\n")
+        proc = subprocess.run([CANON_ENG], env=env)
+
+    rc = int(proc.returncode)
     out(f"{ts()} [POL] done\n")
     return rc
 
 def _help():
     out("AVP-POL (Python canonical entrypoint)\n\n")
     out("Usage:\n")
-    out("  avp-pol <args>\n\n")
+    out("  avp-pol run [--live]\n")
+    out("  avp-pol <outros comandos...>\n\n")
     out("Transition phase:\n")
-    out("  - `run --live` já é canônico em Python (usa `avp-eng legacy-live`)\n")
+    out("  - `run` e `run --live` já são canônicos em Python\n")
     out("  - demais comandos seguem fallback para `avp-pol.sh` (legado congelado)\n")
     return 0
 
@@ -164,12 +177,16 @@ def main(argv):
     if argv[0] in ("-h", "--help", "help"):
         return _help()
 
-    if argv[0] == "run" and "--live" in argv[1:] and "--show-last" not in argv[1:]:
+    if argv[0] == "run":
+        run_args = argv[1:]
+        if "--show-last" in run_args:
+            return _legacy_exec(argv)
         allowed = {"--live"}
-        extras = [a for a in argv[1:] if a not in allowed]
+        extras = [a for a in run_args if a not in allowed]
         if extras:
             return _legacy_exec(argv)
-        return _run_live_python()
+        live = ("--live" in run_args)
+        return _run_python(live)
 
     return _legacy_exec(argv)
 
