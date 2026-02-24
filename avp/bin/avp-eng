@@ -1,0 +1,130 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-ENG
+# File      : avp-eng
+# Role      : Engine (Python canonical entrypoint)
+# Version   : v2.0.1 (2026-02-23)
+# Status    : beta
+# =============================================================
+
+SCRIPT_VER="v2.0.1"
+
+import os
+import sys
+import time
+import subprocess
+from datetime import datetime
+
+CANON_BASE = "/jffs/scripts/avp"
+BIN_DIR = f"{CANON_BASE}/bin"
+LEGACY_ENG = f"{BIN_DIR}/avp-eng.sh"
+
+def ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def out(s):
+    sys.stdout.write(s)
+    sys.stdout.flush()
+
+def _env():
+    env = os.environ.copy()
+    env["PATH"] = "/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:" + env.get("PATH", "")
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    return env
+
+def _legacy_exec(argv):
+    if not os.path.exists(LEGACY_ENG):
+        out(f"{ts()} [ENG] error: legacy fallback not found: {LEGACY_ENG}\n")
+        return 127
+    proc = subprocess.run([LEGACY_ENG] + argv, env=_env())
+    return int(proc.returncode)
+
+def _follow_tmpfile_until_exit(proc, tmp_path):
+    pos = 0
+    stable_after_exit = 0
+    last_size = -1
+
+    while True:
+        alive = (proc.poll() is None)
+
+        try:
+            with open(tmp_path, "r") as f:
+                f.seek(pos)
+                chunk = f.read()
+                if chunk:
+                    out(chunk)
+                pos = f.tell()
+            try:
+                cur_size = os.path.getsize(tmp_path)
+            except OSError:
+                cur_size = pos
+        except OSError:
+            cur_size = -1
+
+        if alive:
+            time.sleep(0.15)
+            continue
+
+        if cur_size == last_size:
+            stable_after_exit += 1
+        else:
+            stable_after_exit = 0
+        last_size = cur_size
+
+        if stable_after_exit >= 4:
+            break
+        time.sleep(0.15)
+
+    rc = proc.returncode
+    return int(0 if rc is None else rc)
+
+def _legacy_live(argv):
+    if not os.path.exists(LEGACY_ENG):
+        out(f"{ts()} [ENG] error: legacy fallback not found: {LEGACY_ENG}\n")
+        return 127
+
+    env = _env()
+    env.pop("AVP_LIVE", None)
+
+    with open(os.devnull, "rb") as dn_in, open(os.devnull, "wb") as dn_out, open(os.devnull, "wb") as dn_err:
+        proc = subprocess.Popen(
+            [LEGACY_ENG] + argv,
+            env=env,
+            stdin=dn_in,
+            stdout=dn_out,
+            stderr=dn_err,
+        )
+
+        tmp_path = "/tmp/avp_eng.%s" % proc.pid
+
+        for _ in range(20):
+            if os.path.exists(tmp_path):
+                break
+            if proc.poll() is not None:
+                break
+            time.sleep(0.05)
+
+        return _follow_tmpfile_until_exit(proc, tmp_path)
+
+def _help():
+    out("AVP-ENG (Python canonical entrypoint)\n\n")
+    out("Usage:\n")
+    out("  avp-eng [args...]\n")
+    out("  avp-eng legacy-live [legacy args...]\n\n")
+    out("Transition phase:\n")
+    out("  - padrão: fallback para avp-eng.sh (legado congelado)\n")
+    out("  - legacy-live: follow robusto do TMPLOG legado (sem race de tail -f)\n")
+    return 0
+
+def main(argv):
+    if not argv:
+        return _legacy_exec([])
+    if argv[0] in ("-h", "--help", "help"):
+        return _help()
+    if argv[0] == "legacy-live":
+        return _legacy_live(argv[1:])
+    return _legacy_exec(argv)
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

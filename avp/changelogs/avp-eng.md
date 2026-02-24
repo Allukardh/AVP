@@ -1,5 +1,21 @@
 # CHANGELOG — AVP-ENG
 
+## v2.0.1 (2026-02-23)
+- FIX: normaliza header canônico de `avp-eng` para o padrão AVP (Version/Status no bloco comentado + `SCRIPT_VER` fora do comentário).
+- FIX: hygiene no helper `legacy-live` (context manager em `/dev/null`).
+
+
+## v2.0.1 (2026-02-23)
+- FIX: normaliza header do entrypoint canônico `avp-eng`, reposicionando `SCRIPT_VER` no bloco de metadados e alinhando com `Version`.
+- FIX: ajuste de hygiene no helper `legacy-live` (uso de context manager para `/dev/null`).
+
+
+## v2.0.0 (2026-02-23)
+- NEW: cria entrypoint canônico Python `avp-eng` (sem extensão).
+- NEW: adiciona helper `legacy-live` para follow robusto do TMPLOG legado (`/tmp/avp_eng.<pid>`), base para eliminar truncamento no live.
+- NOTE: `avp-eng.sh` permanece legado congelado (fallback), sem bump/changelog durante a migração Shell→Python.
+
+
 ## v1.2.51 (2026-02-22)
 - FIX: branch disabled agora faz purge por `from IP` (cleanup_rules_for_ip_anypref) em vez de purge por `pref`, evitando remover regra ativa de outro device quando há compartilhamento/deriva de pref
 - SAFE: mantém compatibilidade com VPN Director (regra real por host = `from <IP>`), com reconciliação mais robusta e determinística

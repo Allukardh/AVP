@@ -1,5 +1,18 @@
 # CHANGELOG — AVP-POL
 
+## v2.0.1 (2026-02-23)
+- FIX: normaliza header canônico de `avp-pol` para o padrão AVP (Version/Status no bloco comentado + `SCRIPT_VER` fora do comentário).
+
+
+## v2.0.1 (2026-02-23)
+- FIX: normaliza header do entrypoint canônico `avp-pol`, reposicionando `SCRIPT_VER` no bloco de metadados e alinhando com `Version`.
+
+
+## v2.0.0 (2026-02-23)
+- NEW: cria entrypoint canônico Python `avp-pol` (sem extensão).
+- NOTE: `avp-pol.sh` permanece legado congelado (fallback), sem bump/changelog durante a migração Shell→Python.
+
+
 ## v1.3.28 (2026-02-21)
 - FEAT: parser SSOT read-only do VPN Director (Merlin) em `avp-pol.sh` via `/jffs/openvpn/vpndirector_rulelist`
 - FEAT: novo subcomando `device ssot` (plain e `--json`) emitindo `enabled|label|ip|iface_base|mac`

@@ -1,0 +1,60 @@
+#!/opt/bin/python3
+# =============================================================
+# AutoVPN Platform (AVP)
+# Component : AVP-POL
+# File      : avp-pol
+# Role      : Policy Controller (Python canonical entrypoint)
+# Version   : v2.0.1 (2026-02-23)
+# Status    : beta
+# =============================================================
+
+SCRIPT_VER="v2.0.1"
+
+import os
+import sys
+import subprocess
+from datetime import datetime
+
+CANON_BASE = "/jffs/scripts/avp"
+BIN_DIR = f"{CANON_BASE}/bin"
+LEGACY_POL = f"{BIN_DIR}/avp-pol.sh"
+
+def ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def out(s):
+    sys.stdout.write(s)
+    sys.stdout.flush()
+
+def _env():
+    env = os.environ.copy()
+    env["PATH"] = "/jffs/scripts:/jffs/scripts/avp/bin:/opt/bin:/opt/sbin:/usr/bin:/usr/sbin:/bin:/sbin:" + env.get("PATH", "")
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    return env
+
+def _legacy_exec(argv):
+    if not os.path.exists(LEGACY_POL):
+        out(f"{ts()} [POL] error: legacy fallback not found: {LEGACY_POL}\n")
+        return 127
+    proc = subprocess.run([LEGACY_POL] + argv, env=_env())
+    return int(proc.returncode)
+
+def _help():
+    out("AVP-POL (Python canonical entrypoint)\n\n")
+    out("Usage:\n")
+    out("  avp-pol <args>\n\n")
+    out("Transition phase:\n")
+    out("  - legado avp-pol.sh permanece congelado e é usado como fallback\n")
+    out("  - lógica do POL será migrada gradualmente para este entrypoint\n")
+    out("  - correção do live será canonizada aqui conforme o run migrar\n")
+    return 0
+
+def main(argv):
+    if not argv:
+        return _legacy_exec([])
+    if argv[0] in ("-h", "--help", "help"):
+        return _help()
+    return _legacy_exec(argv)
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
